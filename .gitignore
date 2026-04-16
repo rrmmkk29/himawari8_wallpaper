@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+
+# Virtual env
+.venv/
+.venv-wsl/
+.venv-wsl-check/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local config
+.env
+.env.*
+config.json
+
+# Runtime / cache
+cache/
+tmp/
+output/
+smoke-output/
+windows-smoke-output/
+wsl-smoke-output/
+himawari.log
+last_source_meta.json
+wallpaper_current.bmp
+wallpaper_*.png
+origin_wallpaper_*.png
+web_debug_screenshot.png
+
+# GitHub packaged outputs
+release/
+
+# Large generated images or tiles
+assets/generated/
+assets/cache/

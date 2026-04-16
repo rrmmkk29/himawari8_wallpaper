@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "himawari-dynamic-wallpaper"
+version = "0.1.0"
+description = "Cross-platform Himawari satellite dynamic wallpaper project"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+  { name = "Your Name" }
+]
+dependencies = [
+  "Pillow>=10.0.0",
+  "playwright>=1.45.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[project.scripts]
+himawari-wallpaper = "himawari_wallpaper.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["himawari_wallpaper_webzoom"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

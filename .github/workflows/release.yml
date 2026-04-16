@@ -1,0 +1,60 @@
+name: Release Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_label:
+        description: "Optional asset label, for example v0.1.0 or rc1"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify Repository
+        run: |
+          python scripts/repo_check.py
+
+      - name: Build Release Zip
+        env:
+          RELEASE_LABEL: ${{ github.event.inputs.release_label || github.ref_name }}
+        run: |
+          if [ -n "$RELEASE_LABEL" ]; then
+            python scripts/pack_release.py --label "$RELEASE_LABEL"
+          else
+            python scripts/pack_release.py
+          fi
+
+      - name: Upload Release Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: release/*.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.zip
+          generate_release_notes: true

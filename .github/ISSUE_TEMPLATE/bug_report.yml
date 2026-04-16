@@ -1,0 +1,17 @@
+name: Bug report
+description: Report a reproducible issue
+body:
+  - type: textarea
+    attributes:
+      label: Problem
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior

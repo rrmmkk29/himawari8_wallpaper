@@ -1,0 +1,11 @@
+name: Feature request
+description: Suggest an improvement
+body:
+  - type: textarea
+    attributes:
+      label: Request
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Why it matters

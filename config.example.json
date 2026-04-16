@@ -1,0 +1,12 @@
+{
+  "interval_sec": 3600,
+  "max_zoom": 8,
+  "output_dir": "./data",
+  "earth_height_ratio": 0.6,
+  "y_offset_ratio": 0.0,
+  "target_url": "https://himawari.asia/",
+  "navigation_timeout_ms": 120000,
+  "warmup_wait_ms": 15000,
+  "probe_step_seconds": 600,
+  "probe_lookback_steps": 36
+}

@@ -51,6 +51,30 @@ def test_format_startup_hint_macos(monkeypatch) -> None:
     assert "LaunchAgent" in text
 
 
+def test_is_lock_screen_supported_on_windows(monkeypatch) -> None:
+    monkeypatch.setattr(gui, "detect_platform", lambda: "windows")
+
+    assert gui._is_lock_screen_supported() is True
+
+
+def test_is_lock_screen_supported_off_windows(monkeypatch) -> None:
+    monkeypatch.setattr(gui, "detect_platform", lambda: "linux")
+
+    assert gui._is_lock_screen_supported() is False
+
+
+def test_format_platform_label_windows() -> None:
+    assert gui._format_platform_label("windows") == "Windows"
+
+
+def test_format_platform_label_macos() -> None:
+    assert gui._format_platform_label("macos") == "macOS"
+
+
+def test_format_platform_label_linux_fallback() -> None:
+    assert gui._format_platform_label("linux") == "Linux"
+
+
 def test_format_startup_toggle_details_windows(monkeypatch, tmp_path: Path) -> None:
     startup_path = tmp_path / "Startup" / "HimawariWallpaperAuto.bat"
     monkeypatch.setattr(gui, "detect_platform", lambda: "windows")

@@ -268,6 +268,8 @@ show the latest generated wallpaper file, run selectable local cleanup / uninsta
 and test Windows lock-screen sync. The action area is grouped into `Run` and
 `Environment` sections to keep everyday actions separated from system-level tasks.
 Startup is controlled with an `Enable startup at login` toggle in the GUI.
+Windows-only lock-screen controls are disabled automatically on macOS and Linux.
+The GUI also shows the detected current platform near the top of the window.
 with the latest generated wallpaper PNG.
 
 Temporarily override network settings:

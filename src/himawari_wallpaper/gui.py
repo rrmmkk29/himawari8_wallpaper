@@ -61,6 +61,7 @@ def _build_args(**overrides) -> argparse.Namespace:
 
 class _GuiState:
     def __init__(self, config: AppConfig) -> None:
+        current_platform = detect_platform()
         self.config_path = tk.StringVar(
             value=str(config.config_path or (Path.cwd() / "config.json").resolve())
         )
@@ -75,6 +76,7 @@ class _GuiState:
         self.apply_wallpaper = tk.BooleanVar(value=config.apply_wallpaper)
         self.sync_lock_screen = tk.BooleanVar(value=config.sync_lock_screen)
         self.status_text = tk.StringVar(value="Ready.")
+        self.platform_text = tk.StringVar(value=f"Platform: {_format_platform_label(current_platform)}")
         self.startup_text = tk.StringVar(value=_format_startup_status())
         self.startup_hint_text = tk.StringVar(value=_format_startup_hint())
         self.startup_enabled = tk.BooleanVar(value=has_startup())
@@ -88,6 +90,8 @@ class _GuiState:
 
 
 def _build_window(root: tk.Tk, state: _GuiState) -> None:
+    lock_screen_supported = _is_lock_screen_supported()
+
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
 
@@ -102,6 +106,7 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         font=("Segoe UI", 14, "bold"),
     )
     header.grid(row=0, column=0, sticky="w", pady=(0, 10))
+    ttk.Label(container, textvariable=state.platform_text).grid(row=0, column=0, sticky="e", pady=(0, 10))
 
     form = ttk.Frame(container)
     form.grid(row=1, column=0, sticky="nsew")
@@ -126,11 +131,15 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         text="Apply desktop wallpaper automatically",
         variable=state.apply_wallpaper,
     ).grid(row=0, column=0, sticky="w", padx=(0, 12))
-    ttk.Checkbutton(
+    lock_screen_toggle = ttk.Checkbutton(
         options,
         text="Sync Windows lock screen too",
         variable=state.sync_lock_screen,
-    ).grid(row=0, column=1, sticky="w")
+    )
+    lock_screen_toggle.grid(row=0, column=1, sticky="w")
+    if not lock_screen_supported:
+        state.sync_lock_screen.set(False)
+        lock_screen_toggle.state(["disabled"])
     info_cards = ttk.Frame(container)
     info_cards.grid(row=2, column=0, sticky="ew", pady=(4, 10))
     info_cards.columnconfigure(0, weight=1)
@@ -210,11 +219,14 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         wraplength=320,
         justify="left",
     ).grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
-    ttk.Button(
+    lock_screen_button = ttk.Button(
         system_frame,
         text="Test lock screen",
         command=lambda: _test_lock_screen(state),
-    ).grid(row=2, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
+    )
+    lock_screen_button.grid(row=2, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
+    if not lock_screen_supported:
+        lock_screen_button.state(["disabled"])
     ttk.Button(
         system_frame,
         text="Cleanup / Uninstall",
@@ -590,6 +602,18 @@ def _format_startup_hint() -> str:
     if current_platform == MACOS:
         return "Startup hint: macOS startup uses a LaunchAgent in your user Library."
     return "Startup hint: Linux startup uses a per-user autostart desktop entry."
+
+
+def _is_lock_screen_supported() -> bool:
+    return detect_platform() == WINDOWS
+
+
+def _format_platform_label(platform_name: str) -> str:
+    if platform_name == WINDOWS:
+        return "Windows"
+    if platform_name == MACOS:
+        return "macOS"
+    return "Linux"
 
 
 def _format_startup_toggle_details() -> str:

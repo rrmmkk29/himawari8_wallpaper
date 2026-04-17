@@ -3,6 +3,14 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.0
+- Switched the primary image discovery path to pure HTTP with `latest.json`, HTML probe, and cached probe fallbacks.
+- Kept Playwright as an optional browser fallback instead of a required default dependency.
+- Moved Playwright into the optional `.[browser]` extra and simplified default conda/bootstrap setup.
+- Added a GUI button to install the optional browser fallback for ordinary users.
+- Updated English and Chinese documentation to match the new install and fallback behavior.
+- Expanded tests for HTTP discovery, bootstrap extras, and GUI install helpers.
+
 ## 0.1.0
 - Refactored the original script into a package with a documented CLI entrypoint.
 - Added automatic Windows / macOS / Linux platform detection and wallpaper backends.

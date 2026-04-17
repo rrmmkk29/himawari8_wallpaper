@@ -30,7 +30,7 @@ python scripts/build_windows_bundle.py --label local
 仓库现在包含发布工作流：
 
 - 文件：`.github/workflows/release.yml`
-- 触发方式 1：推送形如 `v0.1.0` 的 tag
+- 触发方式 1：推送形如 `v0.2.0` 的 tag
 - 触发方式 2：在 GitHub Actions 页面手动触发 `Release Package`
 
 ## 推荐发布步骤
@@ -44,8 +44,8 @@ python scripts/build_windows_bundle.py --label local
 7. 创建并推送 tag，例如：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 8. 等待 GitHub Actions 生成 release zip 并附加到 GitHub Release

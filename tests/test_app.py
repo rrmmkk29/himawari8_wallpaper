@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 
 from datetime import datetime, timezone
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 from PIL import Image
 
 from himawari_wallpaper.app import (
+    MAX_LOCK_SCREEN_FILES,
     build_latest_json_candidates,
     build_latest_json_meta,
     build_lock_screen_path,
@@ -17,6 +19,7 @@ from himawari_wallpaper.app import (
     get_slot_index,
     parse_live_meta,
     persist_wallpaper_outputs,
+    prune_lock_screen_outputs,
 )
 from himawari_wallpaper.config import ALLOWED_ZOOMS, AppConfig
 
@@ -121,6 +124,22 @@ def test_build_lock_screen_path_is_unique(tmp_path: Path) -> None:
     assert first.name.startswith("lockscreen_20260416_120000_")
     assert second.name.startswith("lockscreen_20260416_120000_")
     assert first != second
+
+
+def test_prune_lock_screen_outputs_keeps_latest_files(tmp_path: Path) -> None:
+    for index in range(MAX_LOCK_SCREEN_FILES + 3):
+        path = tmp_path / f"lockscreen_20260416_120000_{index:02d}.png"
+        path.write_bytes(b"png")
+        os.utime(path, (1_700_000_000 + index, 1_700_000_000 + index))
+
+    removed = prune_lock_screen_outputs(tmp_path)
+    remaining = sorted(tmp_path.glob("lockscreen_*.png"))
+
+    assert removed == 3
+    assert len(remaining) == MAX_LOCK_SCREEN_FILES
+    remaining_names = {path.name for path in remaining}
+    assert "lockscreen_20260416_120000_00.png" not in remaining_names
+    assert f"lockscreen_20260416_120000_{MAX_LOCK_SCREEN_FILES + 2:02d}.png" in remaining_names
 
 
 def test_fetch_latest_image_from_web_does_not_require_playwright_when_http_succeeds(

@@ -3,6 +3,10 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.3
+- Added vertical scrolling support to the desktop GUI so smaller windows can still access the full settings form.
+- Limited generated `lockscreen_*.png` files to the latest 24 items, matching the wallpaper retention model more closely.
+
 ## 0.2.2
 - Improved Windows lock screen sync by staging normalized local image files and adding an official `LockScreen.SetImageFileAsync(...)` fallback when `UserProfilePersonalizationSettings` is rejected.
 

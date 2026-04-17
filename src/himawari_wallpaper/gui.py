@@ -98,10 +98,32 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
 
-    container = ttk.Frame(root, padding=16)
-    container.grid(sticky="nsew")
+    outer = ttk.Frame(root)
+    outer.grid(sticky="nsew")
+    outer.columnconfigure(0, weight=1)
+    outer.rowconfigure(0, weight=1)
+
+    canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0)
+    canvas.grid(row=0, column=0, sticky="nsew")
+
+    scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+    scrollbar.grid(row=0, column=1, sticky="ns")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    container = ttk.Frame(canvas, padding=16)
+    container_window = canvas.create_window((0, 0), window=container, anchor="nw")
+
+    container.bind(
+        "<Configure>",
+        lambda event: canvas.configure(scrollregion=canvas.bbox("all")),
+    )
+    canvas.bind(
+        "<Configure>",
+        lambda event: canvas.itemconfigure(container_window, width=event.width),
+    )
+    _bind_mousewheel(root, canvas)
+
     container.columnconfigure(0, weight=1)
-    container.rowconfigure(4, weight=1)
 
     header = ttk.Label(
         container,
@@ -247,7 +269,7 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         command=lambda: _cleanup_uninstall(root, state),
     ).grid(row=4, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
 
-    log_widget = tk.Text(container, height=10, wrap="word")
+    log_widget = tk.Text(container, height=8, wrap="word")
     log_widget.grid(row=4, column=0, sticky="nsew")
     log_widget.insert("end", "GUI ready.\n")
     log_widget.configure(state="disabled")
@@ -650,6 +672,21 @@ def _append_log(state: _GuiState, message: str) -> None:
     state.log_widget.insert("end", message + "\n")
     state.log_widget.see("end")
     state.log_widget.configure(state="disabled")
+
+
+def _bind_mousewheel(root: tk.Tk, canvas: tk.Canvas) -> None:
+    def on_mousewheel(event) -> None:
+        if getattr(event, "delta", 0):
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+            return
+        if getattr(event, "num", None) == 4:
+            canvas.yview_scroll(-1, "units")
+        elif getattr(event, "num", None) == 5:
+            canvas.yview_scroll(1, "units")
+
+    root.bind_all("<MouseWheel>", on_mousewheel)
+    root.bind_all("<Button-4>", on_mousewheel)
+    root.bind_all("<Button-5>", on_mousewheel)
 
 
 def _resolve_output_dir_from_state(state: _GuiState) -> Path:

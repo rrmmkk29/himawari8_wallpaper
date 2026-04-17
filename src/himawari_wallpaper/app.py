@@ -28,6 +28,7 @@ CURRENT_WALLPAPER_BMP = "wallpaper_current.bmp"
 WALLPAPER_RING_PREFIX = "wallpaper"
 ORIGIN_RING_PREFIX = "origin_wallpaper"
 LOCK_SCREEN_PREFIX = "lockscreen"
+MAX_LOCK_SCREEN_FILES = 24
 
 MAX_LOG_BYTES = 1024 * 1024
 KEEP_LOG_BYTES = 512 * 1024
@@ -193,7 +194,6 @@ def cleanup_legacy_wallpapers(out_dir: Path, slot_count: int) -> None:
         "wallpaper_current.png",
         "origin_wallpaper_current.png",
         "originwallpaper_current.png",
-        "lockscreen_*.png",
         "web_debug_screenshot.png",
     ]
 
@@ -210,6 +210,10 @@ def cleanup_legacy_wallpapers(out_dir: Path, slot_count: int) -> None:
 
     if removed > 0:
         log(f"Cleaned up {removed} legacy image files.", out_dir)
+
+    removed_lockscreens = prune_lock_screen_outputs(out_dir, MAX_LOCK_SCREEN_FILES)
+    if removed_lockscreens > 0:
+        log(f"Trimmed {removed_lockscreens} older lock screen files.", out_dir)
 
 
 def choose_zoom_for_screen(
@@ -263,6 +267,29 @@ def persist_wallpaper_outputs(
 def build_lock_screen_path(out_dir: Path, ts_text: str) -> Path:
     suffix = uuid4().hex
     return out_dir / f"{LOCK_SCREEN_PREFIX}_{ts_text}_{suffix}.png"
+
+
+def prune_lock_screen_outputs(
+    out_dir: Path,
+    max_files: int = MAX_LOCK_SCREEN_FILES,
+) -> int:
+    if max_files < 1:
+        raise ValueError("max_files must be at least 1.")
+
+    matches = sorted(
+        out_dir.glob(f"{LOCK_SCREEN_PREFIX}_*.png"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+    removed = 0
+    for path in matches[max_files:]:
+        try:
+            path.unlink()
+            removed += 1
+        except Exception:
+            pass
+    return removed
 
 
 def parse_live_meta(url: str) -> Optional[Dict[str, Any]]:
@@ -977,6 +1004,9 @@ def update_once(
             log(f"Lock screen updated: {lock_screen_path}", config.output_dir)
         except Exception as exc:
             log(f"Lock screen sync failed: {exc}", config.output_dir)
+        removed_lockscreens = prune_lock_screen_outputs(config.output_dir, MAX_LOCK_SCREEN_FILES)
+        if removed_lockscreens > 0:
+            log(f"Trimmed {removed_lockscreens} older lock screen files.", config.output_dir)
 
     return ts_text
 

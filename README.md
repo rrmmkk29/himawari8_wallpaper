@@ -133,6 +133,12 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
+```
+
+Optional browser fallback setup, only if the pure HTTP path stops working upstream:
+
+```bash
+python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 
@@ -177,14 +183,14 @@ The config file also supports behavior flags:
 - `apply_wallpaper`
 - `sync_lock_screen`
 
-Current first-run discovery fallback order:
+Current discovery fallback order:
 
-1. Browser resource entries and page images
-2. Embedded HTML probe image URLs
-3. Direct `latest.json` lookup for the latest `D531106` timestamp
-4. Local cached probe metadata
+1. Direct `latest.json` lookup for the latest `D531106` timestamp
+2. Embedded HTML probe image URLs fetched over plain HTTP
+3. Local cached probe metadata
+4. Optional Playwright browser discovery
 
-This reduces the amount of hard dependency on the site’s frontend implementation details.
+This keeps the default install lightweight while still preserving a browser-level recovery path when the upstream site changes.
 
 ## Common Commands
 
@@ -265,12 +271,14 @@ himawari-wallpaper-gui
 The GUI can save common settings, run one update, install or remove startup,
 open the output folder, preview the latest generated wallpaper, show current startup status,
 show the latest generated wallpaper file, run selectable local cleanup / uninstall actions,
-and test Windows lock-screen sync. The action area is grouped into `Run` and
+install the optional browser fallback into the current environment, and test Windows lock-screen sync.
+The action area is grouped into `Run` and
 `Environment` sections to keep everyday actions separated from system-level tasks.
 Startup is controlled with an `Enable startup at login` toggle in the GUI.
 Windows-only lock-screen controls are disabled automatically on macOS and Linux.
 The GUI also shows the detected current platform near the top of the window.
-with the latest generated wallpaper PNG.
+When the project root is available, the browser fallback button installs `.[browser]`;
+otherwise it falls back to a direct Playwright package install for ordinary users.
 
 Temporarily override network settings:
 
@@ -303,23 +311,23 @@ WSL validation summary:
 
 - `python3 -m pip install --user -e '.[dev]'` works
 - `python3 scripts/repo_check.py` passes
-- `python3 -m playwright install chromium` works
-- Headless Chromium launches successfully inside WSL
 - A real `--once --download-only` smoke test generated `last_source_meta.json`, the original PNG, and the wallpaper PNG
-- The `latest.json` fallback successfully resolved the latest `D531106` timestamp in WSL when browser-side discovery failed
-- `himawari.asia` can load slowly in WSL Chromium, so the default navigation timeout is now `120000ms`
+- The HTTP-based `latest.json` path successfully resolved the latest `D531106` timestamp in WSL
+- Optional Playwright fallback can still be installed later when browser-level discovery is needed
+- `himawari.asia` can load slowly in WSL Chromium, so the default navigation timeout remains `120000ms` for the optional browser fallback
 - Minimal Ubuntu / WSL installations may lack `python3-venv`, which affects the first run of `bootstrap.py` / `bootstrap.sh`
 - WSL is not a full Linux desktop session, so the real desktop wallpaper backend itself was not validated there
 
-If you only want to validate installation first, skip browser installation:
+If you want to add the optional browser fallback later:
 
 ```bash
-python scripts/bootstrap.py --skip-playwright
+python scripts/bootstrap.py --with-playwright
 ```
 
-Then install Chromium manually later:
+Or install it manually inside the active environment:
 
 ```bash
+python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 

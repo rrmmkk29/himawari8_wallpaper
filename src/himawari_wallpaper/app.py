@@ -6,8 +6,11 @@ import io
 import json
 import os
 import re
+import ssl
 import sys
 import time
+import urllib.error
+import urllib.request
 from urllib.parse import urlsplit
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -44,6 +47,11 @@ HTML_PROBE_TILE_RE = re.compile(
     r"(?:(?P<zoom>\d+)d|thumbnail)/(?P<tile>\d+)/"
     r"(?P<yyyy>\d{4})/(?P<mm>\d{2})/(?P<dd>\d{2})/"
     r"(?P<hhmmss>\d{6})_(?P<x>\d+)_(?P<y>\d+)\.png$"
+)
+DEFAULT_USER_AGENT = "himawari-dynamic-wallpaper/0.1"
+LATEST_JSON_PATH_CANDIDATES = (
+    "/img/D531106/latest.json",
+    "/himawari/img/D531106/latest.json",
 )
 
 
@@ -357,12 +365,34 @@ def build_tile_url(meta: Dict[str, Any], zoom: int, x: int, y: int) -> str:
     )
 
 
-def build_latest_json_meta(origin: str, date_text: str) -> Dict[str, Any]:
+def build_latest_json_candidates(target_url: str) -> List[Tuple[str, str]]:
+    split = urlsplit(target_url)
+    origin = f"{split.scheme}://{split.netloc}"
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for path in LATEST_JSON_PATH_CANDIDATES:
+        latest_json_url = f"{origin}{path}"
+        d531106_prefix = latest_json_url.removesuffix("/latest.json")
+        if latest_json_url in seen:
+            continue
+        seen.add(latest_json_url)
+        candidates.append((latest_json_url, d531106_prefix))
+
+    return candidates
+
+
+def build_latest_json_meta(
+    origin: str,
+    date_text: str,
+    d531106_prefix: Optional[str] = None,
+) -> Dict[str, Any]:
     ts = datetime.strptime(date_text, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+    prefix = d531106_prefix or f"{origin}/img/D531106"
     return {
         "host": urlsplit(origin).netloc,
-        "prefix": f"{origin}/img/D531106",
-        "d531106_prefix": f"{origin}/img/D531106",
+        "prefix": prefix,
+        "d531106_prefix": prefix,
         "layer": "D531106",
         "zoom": 1,
         "tile_size": 550,
@@ -378,6 +408,70 @@ def build_latest_json_meta(origin: str, date_text: str) -> Dict[str, Any]:
     }
 
 
+class SimpleHttpResponse:
+    def __init__(self, url: str, status: int, payload: bytes) -> None:
+        self.url = url
+        self.status = status
+        self._payload = payload
+
+    async def body(self) -> bytes:
+        return self._payload
+
+    async def json(self) -> Any:
+        return json.loads(self._payload.decode("utf-8"))
+
+
+class UrllibRequestContext:
+    def __init__(self) -> None:
+        self._ssl_context = ssl.create_default_context()
+
+    async def get(
+        self,
+        url: str,
+        timeout: int = 30000,
+        fail_on_status_code: bool = False,
+    ) -> SimpleHttpResponse:
+        return await asyncio.to_thread(
+            self._get_sync,
+            url,
+            timeout,
+            fail_on_status_code,
+        )
+
+    def _get_sync(
+        self,
+        url: str,
+        timeout: int,
+        fail_on_status_code: bool,
+    ) -> SimpleHttpResponse:
+        request = urllib.request.Request(
+            url,
+            headers={"User-Agent": DEFAULT_USER_AGENT},
+        )
+
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=max(1, timeout / 1000),
+                context=self._ssl_context,
+            ) as response:
+                body = response.read()
+                status = getattr(response, "status", response.getcode())
+                final_url = response.geturl()
+        except urllib.error.HTTPError as exc:
+            body = exc.read()
+            if fail_on_status_code:
+                raise RuntimeError(f"HTTP {exc.code} for {url}") from exc
+            return SimpleHttpResponse(url, exc.code, body)
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Request failed for {url}: {exc.reason}") from exc
+
+        if fail_on_status_code and not 200 <= status < 300:
+            raise RuntimeError(f"HTTP {status} for {url}")
+
+        return SimpleHttpResponse(final_url, status, body)
+
+
 async def fetch_latest_d531106_from_latest_json(
     request_context,
     target_url: str,
@@ -385,32 +479,72 @@ async def fetch_latest_d531106_from_latest_json(
 ) -> Tuple[Dict[str, Any], bytes]:
     split = urlsplit(target_url)
     origin = f"{split.scheme}://{split.netloc}"
-    latest_json_url = f"{origin}/img/D531106/latest.json"
+    last_error: Exception | None = None
 
-    log(f"Trying latest.json fallback: {latest_json_url}", out_dir)
+    for latest_json_url, d531106_prefix in build_latest_json_candidates(target_url):
+        log(f"Trying latest.json fallback: {latest_json_url}", out_dir)
 
+        try:
+            response = await request_context.get(
+                latest_json_url,
+                timeout=30000,
+                fail_on_status_code=True,
+            )
+            payload = await response.json()
+
+            if not isinstance(payload, dict) or "date" not in payload:
+                raise RuntimeError("latest.json fallback returned an unexpected payload.")
+
+            meta = build_latest_json_meta(origin, payload["date"], d531106_prefix=d531106_prefix)
+            tile_url = build_tile_url(meta, 1, 0, 0)
+            meta["url"] = tile_url
+
+            tile_response = await request_context.get(
+                tile_url,
+                timeout=30000,
+                fail_on_status_code=True,
+            )
+            body = await tile_response.body()
+            log(f"latest.json fallback resolved current D531106 tile: {tile_url}", out_dir)
+            return meta, body
+        except Exception as exc:
+            last_error = exc
+
+    raise RuntimeError(f"latest.json fallback failed for all candidates: {last_error}")
+
+
+async def fetch_probe_meta_from_page_html(
+    request_context,
+    target_url: str,
+    out_dir: Path,
+) -> Optional[Dict[str, Any]]:
+    log(f"Trying HTTP HTML probe: {target_url}", out_dir)
     response = await request_context.get(
-        latest_json_url,
+        target_url,
         timeout=30000,
         fail_on_status_code=True,
     )
-    payload = await response.json()
+    payload = await response.body()
+    html = payload.decode("utf-8", errors="ignore")
+    probe_meta = extract_probe_meta_from_html(html)
+    if probe_meta is not None:
+        log(f"HTTP HTML probe found seed: {probe_meta['url']}", out_dir)
+    return probe_meta
 
-    if not isinstance(payload, dict) or "date" not in payload:
-        raise RuntimeError("latest.json fallback returned an unexpected payload.")
 
-    meta = build_latest_json_meta(origin, payload["date"])
-    tile_url = build_tile_url(meta, 1, 0, 0)
-    meta["url"] = tile_url
-
-    tile_response = await request_context.get(
-        tile_url,
+async def fetch_image_body(
+    request_context,
+    url: str,
+    out_dir: Path,
+) -> bytes:
+    response = await request_context.get(
+        url,
         timeout=30000,
         fail_on_status_code=True,
     )
-    body = await tile_response.body()
-    log(f"latest.json fallback resolved current D531106 tile: {tile_url}", out_dir)
-    return meta, body
+    body = await response.body()
+    log(f"Fetched baseline image: {url}", out_dir)
+    return body
 
 
 async def discover_live_source(
@@ -570,7 +704,7 @@ async def probe_latest_d531106_from_cache(
     raise RuntimeError(f"Cache probe failed: {last_error}")
 
 
-async def download_tiles_via_browser_request(
+async def download_tiles_via_request_context(
     request_context,
     meta: Dict[str, Any],
     desired_zoom: int,
@@ -611,17 +745,88 @@ async def download_tiles_via_browser_request(
     raise RuntimeError(f"All D531106 zoom levels failed: {last_error}")
 
 
-async def fetch_latest_image_from_web(
+async def resolve_latest_source_via_http(
+    request_context,
     out_dir: Path,
-    desired_zoom: int,
     config: AppConfig,
-) -> Tuple[datetime, str, Image.Image, int]:
+) -> Tuple[Dict[str, Any], bytes]:
+    latest_json_error: Exception | None = None
+    try:
+        best_meta, best_body = await fetch_latest_d531106_from_latest_json(
+            request_context,
+            config.target_url,
+            out_dir,
+        )
+        log(f"latest.json HTTP source: {best_meta['url']}", out_dir)
+        return best_meta, best_body
+    except Exception as exc:
+        latest_json_error = exc
+        log(f"latest.json HTTP source failed: {exc}", out_dir)
+
+    probe_meta: Dict[str, Any] | None = None
+    try:
+        probe_meta = await fetch_probe_meta_from_page_html(
+            request_context,
+            config.target_url,
+            out_dir,
+        )
+    except Exception as exc:
+        log(f"HTTP HTML probe failed: {exc}", out_dir)
+
+    if probe_meta is not None:
+        if probe_meta["layer"] == "D531106":
+            try:
+                best_body = await fetch_image_body(request_context, probe_meta["url"], out_dir)
+                log(f"HTTP HTML probe source: {probe_meta['url']}", out_dir)
+                return probe_meta, best_body
+            except Exception as exc:
+                log(f"HTTP HTML probe image fetch failed: {exc}", out_dir)
+
+        try:
+            best_meta, best_body = await probe_latest_d531106_from_cache(
+                request_context,
+                probe_meta,
+                out_dir,
+                probe_step_seconds=config.probe_step_seconds,
+                probe_lookback_steps=config.probe_lookback_steps,
+            )
+            log(f"HTTP probe source: {best_meta['url']}", out_dir)
+            return best_meta, best_body
+        except Exception as exc:
+            log(f"HTTP probe cache scan failed: {exc}", out_dir)
+
+    cached_meta = load_source_meta(out_dir)
+    if cached_meta:
+        try:
+            best_meta, best_body = await probe_latest_d531106_from_cache(
+                request_context,
+                cached_meta,
+                out_dir,
+                probe_step_seconds=config.probe_step_seconds,
+                probe_lookback_steps=config.probe_lookback_steps,
+            )
+            log(f"Cached probe source: {best_meta['url']}", out_dir)
+            return best_meta, best_body
+        except Exception as exc:
+            log(f"Cached probe failed: {exc}", out_dir)
+
+    raise RuntimeError(
+        "HTTP discovery failed via latest.json, HTML probe, and cached probe. "
+        f"Latest latest.json error: {latest_json_error}"
+    )
+
+
+async def resolve_latest_source_via_playwright(
+    out_dir: Path,
+    config: AppConfig,
+) -> Tuple[Dict[str, Any], bytes]:
     try:
         from playwright.async_api import async_playwright
     except ImportError as exc:
         raise RuntimeError(
-            "Playwright is not installed. Run `python -m pip install -e .` and "
-            "`python -m playwright install chromium` first."
+            "Optional Playwright fallback is not installed. Install it with "
+            "`python -m pip install -e .[browser]` and then "
+            "`python -m playwright install chromium`."
         ) from exc
 
     async with async_playwright() as playwright:
@@ -635,82 +840,72 @@ async def fetch_latest_image_from_web(
         api_context = await playwright.request.new_context(ignore_https_errors=True)
 
         try:
-            try:
-                best_meta, best_body = await discover_live_source(
-                    page,
-                    api_context,
+            best_meta, best_body = await discover_live_source(
+                page,
+                api_context,
+                out_dir,
+                target_url=config.target_url,
+                navigation_timeout_ms=config.navigation_timeout_ms,
+                warmup_wait_ms=config.warmup_wait_ms,
+            )
+
+            if best_meta.get("probe_only"):
+                log(
+                    f"Browser discovery returned probe seed; trying latest.json fallback: {best_meta['url']}",
                     out_dir,
-                    target_url=config.target_url,
-                    navigation_timeout_ms=config.navigation_timeout_ms,
-                    warmup_wait_ms=config.warmup_wait_ms,
                 )
-
-                if best_meta.get("probe_only"):
-                    log(
-                        f"Discovery returned probe seed; trying latest.json fallback: {best_meta['url']}",
-                        out_dir,
-                    )
-                    best_meta, best_body = await fetch_latest_d531106_from_latest_json(
-                        api_context,
-                        config.target_url,
-                        out_dir,
-                    )
-
-                log(f"Discovery source: {best_meta['url']}", out_dir)
-                save_source_meta(best_meta, out_dir)
-            except Exception as exc:
-                log(f"Page discovery failed; trying latest.json fallback: {exc}", out_dir)
-
-                try:
-                    best_meta, best_body = await fetch_latest_d531106_from_latest_json(
-                        api_context,
-                        config.target_url,
-                        out_dir,
-                    )
-                    log(f"latest.json fallback source: {best_meta['url']}", out_dir)
-                    save_source_meta(best_meta, out_dir)
-                except Exception as latest_exc:
-                    log(f"latest.json fallback failed; trying cache probe: {latest_exc}", out_dir)
-
-                    cached_meta = load_source_meta(out_dir)
-                    if not cached_meta:
-                        raise RuntimeError(
-                            "Page discovery failed, latest.json fallback failed, and no cached probe data exists."
-                        )
-
-                    best_meta, best_body = await probe_latest_d531106_from_cache(
-                        api_context,
-                        cached_meta,
-                        out_dir,
-                        probe_step_seconds=config.probe_step_seconds,
-                        probe_lookback_steps=config.probe_lookback_steps,
-                    )
-                    log(f"Cache probe source: {best_meta['url']}", out_dir)
-                    save_source_meta(best_meta, out_dir)
-
-            try:
-                earth, actual_zoom = await download_tiles_via_browser_request(
+                best_meta, best_body = await fetch_latest_d531106_from_latest_json(
                     api_context,
-                    best_meta,
-                    desired_zoom=desired_zoom,
-                    out_dir=out_dir,
+                    config.target_url,
+                    out_dir,
                 )
-            except Exception as exc:
-                log(f"High zoom D531106 download failed: {exc}", out_dir)
 
-                if best_meta["layer"] == "D531106" and best_body:
-                    log("Falling back to already-loaded D531106 image.", out_dir)
-                    earth = Image.open(io.BytesIO(best_body)).convert("RGB")
-                    actual_zoom = best_meta["zoom"]
-                else:
-                    raise RuntimeError(
-                        "No usable D531106 baseline image and tile download failed."
-                    ) from exc
-
-            return best_meta["timestamp"], best_meta["url"], earth, actual_zoom
+            return best_meta, best_body
         finally:
             await api_context.dispose()
             await browser.close()
+
+
+async def fetch_latest_image_from_web(
+    out_dir: Path,
+    desired_zoom: int,
+    config: AppConfig,
+) -> Tuple[datetime, str, Image.Image, int]:
+    request_context = UrllibRequestContext()
+
+    try:
+        best_meta, best_body = await resolve_latest_source_via_http(
+            request_context,
+            out_dir,
+            config,
+        )
+    except Exception as http_exc:
+        log(f"HTTP discovery failed; trying optional browser fallback: {http_exc}", out_dir)
+        best_meta, best_body = await resolve_latest_source_via_playwright(out_dir, config)
+        log(f"Browser fallback source: {best_meta['url']}", out_dir)
+
+    save_source_meta(best_meta, out_dir)
+
+    try:
+        earth, actual_zoom = await download_tiles_via_request_context(
+            request_context,
+            best_meta,
+            desired_zoom=desired_zoom,
+            out_dir=out_dir,
+        )
+    except Exception as exc:
+        log(f"High zoom D531106 download failed: {exc}", out_dir)
+
+        if best_meta["layer"] == "D531106" and best_body:
+            log("Falling back to already-loaded D531106 image.", out_dir)
+            earth = Image.open(io.BytesIO(best_body)).convert("RGB")
+            actual_zoom = best_meta["zoom"]
+        else:
+            raise RuntimeError(
+                "No usable D531106 baseline image and tile download failed."
+            ) from exc
+
+    return best_meta["timestamp"], best_meta["url"], earth, actual_zoom
 
 
 def update_once(
@@ -798,7 +993,7 @@ def run_loop(
     log(f"Platform: {detect_platform()}", config.output_dir)
     log(f"Refresh interval: {config.interval_sec} seconds", config.output_dir)
     log(f"24-hour ring buffer slots: {slot_count}", config.output_dir)
-    log("Source: himawari.asia page resources + cache probe fallback", config.output_dir)
+    log("Source: HTTP latest.json + HTML probe + cached probe + optional browser fallback", config.output_dir)
     log(f"Earth height ratio: {config.earth_height_ratio}", config.output_dir)
     log(f"Vertical offset ratio: {config.y_offset_ratio}", config.output_dir)
     log(f"Maximum zoom: {config.max_zoom}", config.output_dir)

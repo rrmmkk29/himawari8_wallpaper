@@ -7,6 +7,7 @@ param(
     [switch]$UseVenv,
     [string]$CondaEnvName = "himawari-wallpaper",
     [string]$PythonVersion = "3.11",
+    [switch]$WithPlaywright,
     [switch]$SkipPlaywright
 )
 
@@ -41,6 +42,10 @@ if ($resolvedManager -eq "conda") {
 
 if ($InstallDev) {
     $scriptArgs += "--dev"
+}
+
+if ($WithPlaywright) {
+    $scriptArgs += "--with-playwright"
 }
 
 if ($SkipPlaywright) {

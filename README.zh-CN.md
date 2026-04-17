@@ -133,6 +133,12 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e .
+```
+
+如果后续源站又出现变动，纯 HTTP 路径不够稳定，再按需补装浏览器兜底：
+
+```bash
+python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 
@@ -175,14 +181,14 @@ python -m playwright install chromium
 - `apply_wallpaper`
 - `sync_lock_screen`
 
-首次发现阶段的回退顺序现在是：
+当前抓图回退顺序现在是：
 
-1. 浏览器资源列表和页面图片
-2. HTML 中的嵌入式探针图片 URL
-3. `latest.json` 直连最新 D531106 时间
-4. 本地缓存探针
+1. `latest.json` 直连最新 D531106 时间
+2. 纯 HTTP 抓取页面 HTML 并提取嵌入式探针图片 URL
+3. 本地缓存探针
+4. 可选的 Playwright 浏览器发现
 
-这让第一次运行时对页面前端实现细节的依赖小了很多。
+这样默认安装更轻，只有在源站前端再次变化时才需要启用浏览器级兜底。
 
 ## 常用命令
 
@@ -262,12 +268,14 @@ himawari-wallpaper-gui
 
 GUI 现在可以保存常用设置、单次运行、安装或移除开机自启、打开输出目录、
 预览最新生成的壁纸、显示当前自启状态、显示最近一次生成的壁纸文件、
-执行可选项的本地清理/卸载。按钮区现在分成 `Run` 和 `Environment`
+执行可选项的本地清理/卸载、把可选浏览器兜底直接安装到当前环境里，
+并在 Windows 下测试锁屏同步。按钮区现在分成 `Run` 和 `Environment`
 两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
 `Enable startup at login` 开关控制，
 Windows 专属的锁屏相关控件会在 macOS / Linux 上自动禁用，
-GUI 顶部还会显示当前识别到的平台，
-并在 Windows 下用最新生成的壁纸 PNG 测试锁屏同步。
+GUI 顶部还会显示当前识别到的平台。
+如果 GUI 能定位到项目根目录，浏览器兜底按钮会安装 `.[browser]`；
+如果定位不到，则自动退回为直接安装 Playwright，方便普通用户点击使用。
 
 临时覆盖抓图参数：
 
@@ -300,24 +308,24 @@ WSL 测试结论：
 
 - `python3 -m pip install --user -e '.[dev]'` 可完成安装
 - `python3 scripts/repo_check.py` 可完整通过
-- `python3 -m playwright install chromium` 可完成浏览器安装
-- WSL 中的无头 Chromium 已实测可启动并成功访问页面
 - 可使用 `--once --download-only` 跑真实抓图 smoke test 而不触发桌面壁纸设置
 - 真实 smoke test 已成功生成 `last_source_meta.json`、原图 PNG 和壁纸 PNG
-- 首次发现失败时，`latest.json` 回退已实测可在 WSL 中拿到最新 D531106 时间并完成下载
-- `himawari.asia` 在 WSL Chromium 中首屏导航可能偏慢，默认导航超时已提升到 `120000ms`
+- 纯 HTTP 的 `latest.json` 路径已实测可在 WSL 中拿到最新 D531106 时间并完成下载
+- 如果以后需要浏览器级兜底，Playwright 仍然可以单独补装
+- `himawari.asia` 在 WSL Chromium 中首屏导航可能偏慢，因此可选浏览器兜底仍保留 `120000ms` 默认导航超时
 - 精简版 Ubuntu/WSL 可能缺少 `python3-venv`，这会影响 `bootstrap.py` / `bootstrap.sh` 的首轮创建虚拟环境
 - WSL 不是完整 Linux 桌面会话，因此这里没有验证真实桌面壁纸设置后端
 
-如果你只想先验证安装流程，可以跳过浏览器安装：
+如果你之后想补装可选的浏览器兜底：
 
 ```bash
-python scripts/bootstrap.py --skip-playwright
+python scripts/bootstrap.py --with-playwright
 ```
 
-之后再手动执行：
+或者在当前环境里手动补装：
 
 ```bash
+python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 

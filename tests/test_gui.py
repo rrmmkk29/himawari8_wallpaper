@@ -75,6 +75,13 @@ def test_format_platform_label_linux_fallback() -> None:
     assert gui._format_platform_label("linux") == "Linux"
 
 
+def test_format_browser_fallback_details_mentions_project_extra() -> None:
+    text = gui._format_browser_fallback_details()
+
+    assert ".[browser]" in text
+    assert "Playwright" in text
+
+
 def test_format_startup_toggle_details_windows(monkeypatch, tmp_path: Path) -> None:
     startup_path = tmp_path / "Startup" / "HimawariWallpaperAuto.bat"
     monkeypatch.setattr(gui, "detect_platform", lambda: "windows")
@@ -95,6 +102,48 @@ def test_build_cleanup_confirmation_message_mentions_conda_and_targets(tmp_path:
     assert str(config_path) in text
     assert str(output_dir) in text
     assert "conda environment is not removed" in text
+
+
+def test_find_project_root_returns_matching_parent(tmp_path: Path) -> None:
+    project_root = tmp_path / "repo"
+    nested = project_root / "src" / "himawari_wallpaper"
+    nested.mkdir(parents=True)
+    (project_root / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+
+    result = gui._find_project_root((nested,))
+
+    assert result == project_root.resolve()
+
+
+def test_build_browser_fallback_install_steps_prefers_project_extra(tmp_path: Path) -> None:
+    steps = gui._build_browser_fallback_install_steps("python", tmp_path)
+
+    assert steps == [
+        (["python", "-m", "pip", "install", "-e", ".[browser]"], tmp_path),
+        (["python", "-m", "playwright", "install", "chromium"], None),
+    ]
+
+
+def test_build_browser_fallback_install_steps_falls_back_to_direct_package() -> None:
+    steps = gui._build_browser_fallback_install_steps("python", None)
+
+    assert steps == [
+        (["python", "-m", "pip", "install", "playwright>=1.45.0"], None),
+        (["python", "-m", "playwright", "install", "chromium"], None),
+    ]
+
+
+def test_format_subprocess_error_uses_last_output_line() -> None:
+    error = gui.subprocess.CalledProcessError(
+        1,
+        ["python", "-m", "pip", "install", "playwright"],
+        stderr="line one\nlast line",
+    )
+
+    text = gui._format_subprocess_error(error)
+
+    assert "last line" in text
+    assert "python -m pip install playwright" in text
 
 
 def test_format_cleanup_result_summarizes_removed_items(tmp_path: Path) -> None:

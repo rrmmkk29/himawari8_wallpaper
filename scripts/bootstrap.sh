@@ -16,6 +16,7 @@ VENV_DIR=".venv"
 CONDA_ENV_NAME="himawari-wallpaper"
 PYTHON_VERSION="3.11"
 INSTALL_DEV=0
+WITH_PLAYWRIGHT=0
 SKIP_PLAYWRIGHT=0
 
 while [[ $# -gt 0 ]]; do
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       INSTALL_DEV=1
       shift
       ;;
+    --with-playwright)
+      WITH_PLAYWRIGHT=1
+      shift
+      ;;
     --skip-playwright)
       SKIP_PLAYWRIGHT=1
       shift
@@ -69,6 +74,10 @@ fi
 
 if [[ "$INSTALL_DEV" == "1" ]]; then
   ARGS+=("--dev")
+fi
+
+if [[ "$WITH_PLAYWRIGHT" == "1" ]]; then
+  ARGS+=("--with-playwright")
 fi
 
 if [[ "$SKIP_PLAYWRIGHT" == "1" ]]; then

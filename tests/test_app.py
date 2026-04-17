@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 from datetime import datetime, timezone
@@ -5,17 +6,19 @@ from datetime import datetime, timezone
 from PIL import Image
 
 from himawari_wallpaper.app import (
+    build_latest_json_candidates,
     build_latest_json_meta,
     build_lock_screen_path,
     choose_zoom_for_screen,
     compose_wallpaper,
     extract_probe_meta_from_html,
+    fetch_latest_image_from_web,
     get_slot_count,
     get_slot_index,
     parse_live_meta,
     persist_wallpaper_outputs,
 )
-from himawari_wallpaper.config import ALLOWED_ZOOMS
+from himawari_wallpaper.config import ALLOWED_ZOOMS, AppConfig
 
 
 def test_choose_zoom_for_screen_returns_allowed_zoom() -> None:
@@ -81,6 +84,18 @@ def test_build_latest_json_meta_uses_origin_and_date() -> None:
     assert meta["hhmmss"] == "125000"
 
 
+def test_build_latest_json_candidates_keeps_direct_and_himawari_paths() -> None:
+    candidates = build_latest_json_candidates("https://himawari.asia/")
+
+    assert candidates == [
+        ("https://himawari.asia/img/D531106/latest.json", "https://himawari.asia/img/D531106"),
+        (
+            "https://himawari.asia/himawari/img/D531106/latest.json",
+            "https://himawari.asia/himawari/img/D531106",
+        ),
+    ]
+
+
 def test_persist_wallpaper_outputs_only_writes_files(tmp_path: Path) -> None:
     earth = Image.new("RGB", (10, 10), (255, 255, 255))
     wallpaper = Image.new("RGB", (20, 20), (0, 0, 0))
@@ -106,3 +121,58 @@ def test_build_lock_screen_path_is_unique(tmp_path: Path) -> None:
     assert first.name.startswith("lockscreen_20260416_120000_")
     assert second.name.startswith("lockscreen_20260416_120000_")
     assert first != second
+
+
+def test_fetch_latest_image_from_web_does_not_require_playwright_when_http_succeeds(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    meta = build_latest_json_meta("https://himawari.asia", "2026-04-16 12:50:00")
+    meta["url"] = "https://himawari.asia/img/D531106/1d/550/2026/04/16/125000_0_0.png"
+    earth = Image.new("RGB", (16, 16), (1, 2, 3))
+
+    async def fake_resolve_latest_source_via_http(request_context, out_dir, config):
+        return meta, b"baseline"
+
+    async def fake_download_tiles(request_context, source_meta, desired_zoom, out_dir):
+        assert source_meta["url"] == meta["url"]
+        assert desired_zoom == 1
+        return earth, 1
+
+    monkeypatch.setattr(
+        "himawari_wallpaper.app.resolve_latest_source_via_http",
+        fake_resolve_latest_source_via_http,
+    )
+    monkeypatch.setattr(
+        "himawari_wallpaper.app.download_tiles_via_request_context",
+        fake_download_tiles,
+    )
+    monkeypatch.setattr(
+        "himawari_wallpaper.app.save_source_meta",
+        lambda *args, **kwargs: None,
+    )
+
+    config = AppConfig(
+        interval_sec=600,
+        output_dir=tmp_path,
+        earth_height_ratio=0.6,
+        y_offset_ratio=0.0,
+        max_zoom=1,
+        target_url="https://himawari.asia/",
+        navigation_timeout_ms=120000,
+        warmup_wait_ms=15000,
+        probe_step_seconds=600,
+        probe_lookback_steps=12,
+        config_path=None,
+        apply_wallpaper=False,
+        sync_lock_screen=False,
+    )
+
+    ts, source_url, image, actual_zoom = asyncio.run(
+        fetch_latest_image_from_web(tmp_path, desired_zoom=1, config=config)
+    )
+
+    assert ts == meta["timestamp"]
+    assert source_url == meta["url"]
+    assert image.size == earth.size
+    assert actual_zoom == 1

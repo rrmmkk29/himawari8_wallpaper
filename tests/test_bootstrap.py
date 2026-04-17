@@ -53,6 +53,15 @@ def test_build_conda_run_command_wraps_subcommand() -> None:
     ]
 
 
+def test_build_install_target_supports_optional_browser_extra() -> None:
+    module = load_bootstrap_module()
+
+    assert module.build_install_target(dev=False, with_playwright=False) == "."
+    assert module.build_install_target(dev=True, with_playwright=False) == ".[dev]"
+    assert module.build_install_target(dev=False, with_playwright=True) == ".[browser]"
+    assert module.build_install_target(dev=True, with_playwright=True) == ".[dev,browser]"
+
+
 def test_parse_args_defaults_to_conda(monkeypatch) -> None:
     module = load_bootstrap_module()
     monkeypatch.setattr(module.sys, "argv", ["bootstrap.py"])
@@ -69,3 +78,4 @@ def test_environment_yml_declares_default_conda_env() -> None:
 
     assert "name: himawari-wallpaper" in text
     assert "- conda-forge" in text
+    assert "playwright" not in text

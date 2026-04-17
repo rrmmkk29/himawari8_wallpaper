@@ -1,6 +1,7 @@
 import argparse
 import os
 import subprocess
+import sys
 import threading
 import tkinter as tk
 from dataclasses import replace
@@ -82,6 +83,8 @@ class _GuiState:
         self.startup_enabled = tk.BooleanVar(value=has_startup())
         self.syncing_startup_toggle = False
         self.latest_wallpaper_text = tk.StringVar(value=_format_latest_wallpaper_status(config.output_dir))
+        self.browser_fallback_text = tk.StringVar(value=_format_browser_fallback_details())
+        self.browser_install_in_progress = False
         self.log_widget: tk.Text | None = None
 
     @classmethod
@@ -219,19 +222,30 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         wraplength=320,
         justify="left",
     ).grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+    ttk.Button(
+        system_frame,
+        text="Install optional browser fallback",
+        command=lambda: _install_browser_fallback(root, state),
+    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 6))
+    ttk.Label(
+        system_frame,
+        textvariable=state.browser_fallback_text,
+        wraplength=320,
+        justify="left",
+    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
     lock_screen_button = ttk.Button(
         system_frame,
         text="Test lock screen",
         command=lambda: _test_lock_screen(state),
     )
-    lock_screen_button.grid(row=2, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
+    lock_screen_button.grid(row=4, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
     if not lock_screen_supported:
         lock_screen_button.state(["disabled"])
     ttk.Button(
         system_frame,
         text="Cleanup / Uninstall",
         command=lambda: _cleanup_uninstall(root, state),
-    ).grid(row=2, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
+    ).grid(row=4, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
 
     log_widget = tk.Text(container, height=10, wrap="word")
     log_widget.grid(row=4, column=0, sticky="nsew")
@@ -452,6 +466,82 @@ def _open_output_dir(state: _GuiState) -> None:
     _set_status_and_log(state, "Output folder opened.", f"Opened output folder: {output_dir}")
 
 
+def _install_browser_fallback(root: tk.Tk, state: _GuiState) -> None:
+    if state.browser_install_in_progress:
+        _set_status_and_log(
+            state,
+            "Browser fallback install already running.",
+            "Optional browser fallback install is already running.",
+        )
+        return
+
+    python_executable = sys.executable
+    project_root = _find_project_root()
+    steps = _build_browser_fallback_install_steps(python_executable, project_root)
+
+    def task() -> None:
+        try:
+            for command, cwd in steps:
+                command_text = _format_command_for_log(command, cwd)
+                root.after(
+                    0,
+                    lambda text=command_text: _append_log(state, f"Running: {text}"),
+                )
+                subprocess.run(
+                    command,
+                    cwd=str(cwd) if cwd is not None else None,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                root.after(
+                    0,
+                    lambda text=command_text: _append_log(state, f"Completed: {text}"),
+                )
+
+            root.after(
+                0,
+                lambda: _finish_browser_fallback_install(state, project_root),
+            )
+        except subprocess.CalledProcessError as exc:
+            root.after(
+                0,
+                lambda message=_format_subprocess_error(exc): _fail_browser_fallback_install(
+                    state,
+                    message,
+                ),
+            )
+        except Exception as exc:
+            root.after(
+                0,
+                lambda message=str(exc): _fail_browser_fallback_install(state, message),
+            )
+
+    state.browser_install_in_progress = True
+    state.status_text.set("Installing optional browser fallback...")
+    _append_log(state, f"Installing optional browser fallback with {python_executable}")
+    threading.Thread(target=task, daemon=True).start()
+
+
+def _finish_browser_fallback_install(state: _GuiState, project_root: Path | None) -> None:
+    state.browser_install_in_progress = False
+    source_hint = (
+        f"using .[browser] from {project_root}"
+        if project_root is not None
+        else "using direct Playwright package install"
+    )
+    _set_status_and_log(
+        state,
+        "Optional browser fallback installed.",
+        f"Optional browser fallback installed successfully, {source_hint}.",
+    )
+
+
+def _fail_browser_fallback_install(state: _GuiState, message: str) -> None:
+    state.browser_install_in_progress = False
+    _show_error(state, "Browser fallback install failed", message)
+
+
 def _test_lock_screen(state: _GuiState) -> None:
     current_platform = detect_platform()
     if current_platform != WINDOWS:
@@ -635,6 +725,14 @@ def _format_startup_toggle_details() -> str:
     )
 
 
+def _format_browser_fallback_details() -> str:
+    return (
+        "Installs Playwright and Chromium into the current environment. "
+        "The GUI uses `.[browser]` from the project root when available, "
+        "then falls back to a direct Playwright install."
+    )
+
+
 def _build_cleanup_confirmation_message(config_path: Path | None, output_dir: Path) -> str:
     config_display = str(config_path) if config_path is not None else "(no config file found)"
     return (
@@ -757,6 +855,51 @@ def _show_cleanup_dialog(
     dialog.protocol("WM_DELETE_WINDOW", cancel)
     dialog.wait_window()
     return selection["value"]
+
+
+def _find_project_root(start_paths: tuple[Path, ...] | None = None) -> Path | None:
+    candidates = start_paths or (Path.cwd(), Path(__file__).resolve().parent)
+    visited: set[Path] = set()
+
+    for start in candidates:
+        current = start if start.is_dir() else start.parent
+        for candidate in (current, *current.parents):
+            candidate = candidate.resolve()
+            if candidate in visited:
+                continue
+            visited.add(candidate)
+            if (candidate / "pyproject.toml").exists():
+                return candidate
+
+    return None
+
+
+def _build_browser_fallback_install_steps(
+    python_executable: str,
+    project_root: Path | None,
+) -> list[tuple[list[str], Path | None]]:
+    steps: list[tuple[list[str], Path | None]] = []
+    if project_root is not None:
+        steps.append(([python_executable, "-m", "pip", "install", "-e", ".[browser]"], project_root))
+    else:
+        steps.append(([python_executable, "-m", "pip", "install", "playwright>=1.45.0"], None))
+    steps.append(([python_executable, "-m", "playwright", "install", "chromium"], None))
+    return steps
+
+
+def _format_command_for_log(command: list[str], cwd: Path | None) -> str:
+    command_text = " ".join(command)
+    if cwd is None:
+        return command_text
+    return f"{command_text} (cwd: {cwd})"
+
+
+def _format_subprocess_error(exc: subprocess.CalledProcessError) -> str:
+    output = (exc.stderr or exc.stdout or "").strip()
+    if output:
+        last_line = output.splitlines()[-1]
+        return f"Command failed: {' '.join(exc.cmd)}. {last_line}"
+    return f"Command failed: {' '.join(exc.cmd)}."
 
 
 def find_latest_generated_wallpaper(output_dir: Path) -> Path | None:

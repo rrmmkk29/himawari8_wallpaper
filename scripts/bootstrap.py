@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
+
 import argparse
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+DEFAULT_CONDA_ENV = "himawari-wallpaper"
 
 
 def run(command: list[str]) -> None:
@@ -18,14 +24,71 @@ def get_venv_python(venv_dir: Path) -> Path:
     return venv_dir / "bin" / "python"
 
 
+def build_conda_create_command(conda_exe: str, env_name: str, python_version: str) -> list[str]:
+    return [conda_exe, "create", "-y", "-n", env_name, f"python={python_version}", "pip"]
+
+
+def build_conda_run_command(conda_exe: str, env_name: str, command: list[str]) -> list[str]:
+    return [conda_exe, "run", "--no-capture-output", "-n", env_name, *command]
+
+
+def find_conda_executable(custom: str | None = None) -> str:
+    if custom:
+        return custom
+
+    for candidate in ("conda", "mamba", "micromamba"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+
+    raise SystemExit(
+        "Conda-compatible executable was not found in PATH. "
+        "Install conda/mamba/micromamba first, or use `--manager venv` as a fallback."
+    )
+
+
+def conda_env_exists(conda_exe: str, env_name: str) -> bool:
+    result = subprocess.run(
+        [conda_exe, "env", "list", "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    envs = payload.get("envs", [])
+    lowered = env_name.lower()
+    return any(Path(env_path).name.lower() == lowered for env_path in envs)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a virtual environment and install Himawari wallpaper dependencies."
+        description="Create a venv or conda environment and install Himawari wallpaper dependencies."
+    )
+    parser.add_argument(
+        "--manager",
+        choices=("venv", "conda"),
+        default="conda",
+        help="Environment manager to use, default: conda",
     )
     parser.add_argument(
         "--venv",
         default=".venv",
-        help="Virtual environment directory, default: .venv",
+        help="Virtual environment directory for venv mode, default: .venv",
+    )
+    parser.add_argument(
+        "--conda-env-name",
+        default=DEFAULT_CONDA_ENV,
+        help=f"Conda environment name for conda mode, default: {DEFAULT_CONDA_ENV}",
+    )
+    parser.add_argument(
+        "--conda-exe",
+        default=None,
+        help="Optional conda executable path, for example conda or mamba",
+    )
+    parser.add_argument(
+        "--python-version",
+        default="3.11",
+        help="Python version to create inside the conda environment, default: 3.11",
     )
     parser.add_argument(
         "--dev",
@@ -40,9 +103,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
-    args = parse_args()
-    repo_root = Path(__file__).resolve().parent.parent
+def bootstrap_venv(args: argparse.Namespace, repo_root: Path) -> None:
     venv_dir = (repo_root / args.venv).resolve()
 
     if shutil.which("python") is None and shutil.which("python3") is None:
@@ -79,10 +140,54 @@ def main() -> None:
 
     print()
     print("Bootstrap complete.")
-    print("Activate the virtual environment with:")
+    print("Activate the environment with:")
     print(f"  {activate_hint}")
     print("Then run:")
     print("  python -m himawari_wallpaper --once")
+    print("Cleanup hint:")
+    print("  python scripts/uninstall.py --all")
+
+
+def bootstrap_conda(args: argparse.Namespace, repo_root: Path) -> None:
+    conda_exe = find_conda_executable(args.conda_exe)
+    env_name = args.conda_env_name
+
+    if conda_env_exists(conda_exe, env_name):
+        print(f"Conda environment already exists: {env_name}")
+    else:
+        print(f"Creating conda environment: {env_name}")
+        run(build_conda_create_command(conda_exe, env_name, args.python_version))
+
+    print("Upgrading pip inside conda environment")
+    run(build_conda_run_command(conda_exe, env_name, ["python", "-m", "pip", "install", "--upgrade", "pip"]))
+
+    install_target = ".[dev]" if args.dev else "."
+    print("Installing project inside conda environment")
+    run(build_conda_run_command(conda_exe, env_name, ["python", "-m", "pip", "install", "-e", install_target]))
+
+    if not args.skip_playwright:
+        print("Installing Playwright Chromium inside conda environment")
+        run(build_conda_run_command(conda_exe, env_name, ["python", "-m", "playwright", "install", "chromium"]))
+
+    print()
+    print("Bootstrap complete.")
+    print("Activate the environment with:")
+    print(f"  conda activate {env_name}")
+    print("Then run:")
+    print("  python -m himawari_wallpaper --once")
+    print("Cleanup hint:")
+    print(f"  python scripts/uninstall.py --all --remove-conda-env {env_name}")
+
+
+def main() -> None:
+    args = parse_args()
+    repo_root = Path(__file__).resolve().parent.parent
+
+    if args.manager == "conda":
+        bootstrap_conda(args, repo_root)
+        return
+
+    bootstrap_venv(args, repo_root)
 
 
 if __name__ == "__main__":

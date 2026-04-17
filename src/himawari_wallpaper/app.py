@@ -12,17 +12,19 @@ from urllib.parse import urlsplit
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from PIL import Image
 
 from .autostart import install_startup, remove_startup
 from .config import ALLOWED_ZOOMS, AppConfig, build_runtime_config
 from .platforms import detect_platform, get_screen_size
-from .wallpaper import set_wallpaper
+from .wallpaper import set_lock_screen, set_wallpaper
 
 CURRENT_WALLPAPER_BMP = "wallpaper_current.bmp"
 WALLPAPER_RING_PREFIX = "wallpaper"
 ORIGIN_RING_PREFIX = "origin_wallpaper"
+LOCK_SCREEN_PREFIX = "lockscreen"
 
 MAX_LOG_BYTES = 1024 * 1024
 KEEP_LOG_BYTES = 512 * 1024
@@ -183,6 +185,7 @@ def cleanup_legacy_wallpapers(out_dir: Path, slot_count: int) -> None:
         "wallpaper_current.png",
         "origin_wallpaper_current.png",
         "originwallpaper_current.png",
+        "lockscreen_*.png",
         "web_debug_screenshot.png",
     ]
 
@@ -244,13 +247,14 @@ def persist_wallpaper_outputs(
     wallpaper: Image.Image,
     origin_png_path: Path,
     wallpaper_png_path: Path,
-    apply_wallpaper: bool,
 ) -> None:
     save_png(earth, origin_png_path)
     save_png(wallpaper, wallpaper_png_path)
 
-    if apply_wallpaper:
-        set_wallpaper(wallpaper_png_path)
+
+def build_lock_screen_path(out_dir: Path, ts_text: str) -> Path:
+    suffix = uuid4().hex
+    return out_dir / f"{LOCK_SCREEN_PREFIX}_{ts_text}_{suffix}.png"
 
 
 def parse_live_meta(url: str) -> Optional[Dict[str, Any]]:
@@ -712,7 +716,6 @@ async def fetch_latest_image_from_web(
 def update_once(
     config: AppConfig,
     last_timestamp: Optional[str] = None,
-    apply_wallpaper: bool = True,
 ) -> Optional[str]:
     screen_w, screen_h = get_screen_size()
     desired_zoom = min(
@@ -763,19 +766,28 @@ def update_once(
         wallpaper=wallpaper,
         origin_png_path=origin_png_path,
         wallpaper_png_path=png_path,
-        apply_wallpaper=apply_wallpaper,
     )
 
-    if apply_wallpaper:
+    if config.apply_wallpaper:
+        set_wallpaper(png_path)
         log(f"Wallpaper updated: {png_path}", config.output_dir)
     else:
         log(f"Wallpaper generated without applying it: {png_path}", config.output_dir)
+
+    if config.sync_lock_screen:
+        lock_screen_path = build_lock_screen_path(config.output_dir, ts_text)
+        save_png(wallpaper, lock_screen_path)
+        try:
+            set_lock_screen(lock_screen_path)
+            log(f"Lock screen updated: {lock_screen_path}", config.output_dir)
+        except Exception as exc:
+            log(f"Lock screen sync failed: {exc}", config.output_dir)
+
     return ts_text
 
 
 def run_loop(
     config: AppConfig,
-    apply_wallpaper: bool = True,
 ) -> None:
     last_timestamp = None
 
@@ -803,7 +815,6 @@ def run_loop(
             last_timestamp = update_once(
                 config=config,
                 last_timestamp=last_timestamp,
-                apply_wallpaper=apply_wallpaper,
             )
         except Exception as exc:
             log(f"Update failed: {exc}", config.output_dir)
@@ -819,9 +830,36 @@ def main() -> None:
     parser.add_argument("--run", action="store_true", help="Run the refresh loop continuously")
     parser.add_argument("--once", action="store_true", help="Run a single refresh and exit")
     parser.add_argument(
-        "--skip-set-wallpaper",
-        action="store_true",
+        "--download-only",
+        dest="apply_wallpaper",
+        action="store_false",
+        default=None,
         help="Fetch and generate wallpaper files but do not apply them to the desktop",
+    )
+    parser.add_argument(
+        "--skip-set-wallpaper",
+        dest="apply_wallpaper",
+        action="store_false",
+        default=None,
+        help="Legacy alias for --download-only",
+    )
+    parser.add_argument(
+        "--sync-lock-screen",
+        action="store_true",
+        default=None,
+        help="On Windows, also sync the generated wallpaper image to the lock screen",
+    )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="Open the simple desktop GUI for common settings",
+    )
+    parser.add_argument(
+        "--no-sync-lock-screen",
+        dest="sync_lock_screen",
+        action="store_false",
+        default=None,
+        help="Disable Windows lock screen sync for this run",
     )
     parser.add_argument("--install-startup", action="store_true", help="Install login auto-start")
     parser.add_argument("--remove-startup", action="store_true", help="Remove login auto-start")
@@ -891,6 +929,12 @@ def main() -> None:
         print(f"Error: {exc}")
         sys.exit(1)
 
+    if args.gui:
+        from .gui import main as gui_main
+
+        gui_main(config)
+        return
+
     if args.remove_startup:
         if remove_startup():
             print("Auto-start removed.")
@@ -905,6 +949,8 @@ def main() -> None:
             earth_height_ratio=config.earth_height_ratio,
             y_offset_ratio=config.y_offset_ratio,
             max_zoom=config.max_zoom,
+            apply_wallpaper=config.apply_wallpaper,
+            sync_lock_screen=config.sync_lock_screen,
             config_path=config.config_path,
         )
         print(f"Auto-start installed: {startup_path}")
@@ -914,7 +960,7 @@ def main() -> None:
     cleanup_legacy_wallpapers(config.output_dir, slot_count)
 
     if args.once:
-        update_once(config=config, apply_wallpaper=not args.skip_set_wallpaper)
+        update_once(config=config)
         return
 
-    run_loop(config, apply_wallpaper=not args.skip_set_wallpaper)
+    run_loop(config)

@@ -1,6 +1,13 @@
 param(
+    [ValidateSet("conda", "venv")]
+    [string]$Manager = "conda",
     [string]$VenvDir = ".venv",
-    [switch]$InstallDev
+    [switch]$InstallDev,
+    [switch]$UseConda,
+    [switch]$UseVenv,
+    [string]$CondaEnvName = "himawari-wallpaper",
+    [string]$PythonVersion = "3.11",
+    [switch]$SkipPlaywright
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,33 +23,32 @@ function Get-PythonLauncher {
 }
 
 $pythonLauncher = Get-PythonLauncher
+$scriptArgs = @("scripts/bootstrap.py")
 
-Write-Host "Creating virtual environment in $VenvDir"
-if ($pythonLauncher.Length -gt 1) {
-    & $pythonLauncher[0] $pythonLauncher[1] -m venv $VenvDir
-} else {
-    & $pythonLauncher[0] -m venv $VenvDir
+$resolvedManager = $Manager
+if ($UseConda) {
+    $resolvedManager = "conda"
+}
+if ($UseVenv) {
+    $resolvedManager = "venv"
 }
 
-$pythonExe = Join-Path $VenvDir "Scripts\python.exe"
-
-Write-Host "Upgrading pip"
-& $pythonExe -m pip install --upgrade pip
+if ($resolvedManager -eq "conda") {
+    $scriptArgs += @("--manager", "conda", "--conda-env-name", $CondaEnvName, "--python-version", $PythonVersion)
+} else {
+    $scriptArgs += @("--manager", "venv", "--venv", $VenvDir)
+}
 
 if ($InstallDev) {
-    Write-Host "Installing project with dev dependencies"
-    & $pythonExe -m pip install -e ".[dev]"
-} else {
-    Write-Host "Installing project"
-    & $pythonExe -m pip install -e .
+    $scriptArgs += "--dev"
 }
 
-Write-Host "Installing Playwright Chromium"
-& $pythonExe -m playwright install chromium
+if ($SkipPlaywright) {
+    $scriptArgs += "--skip-playwright"
+}
 
-Write-Host ""
-Write-Host "Bootstrap complete."
-Write-Host "Activate the venv with:"
-Write-Host "  .\$VenvDir\Scripts\Activate.ps1"
-Write-Host "Run one refresh with:"
-Write-Host "  himawari-wallpaper --once"
+if ($pythonLauncher.Length -gt 1) {
+    & $pythonLauncher[0] $pythonLauncher[1] @scriptArgs
+} else {
+    & $pythonLauncher[0] @scriptArgs
+}

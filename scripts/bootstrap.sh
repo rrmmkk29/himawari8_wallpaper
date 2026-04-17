@@ -2,9 +2,6 @@
 
 set -euo pipefail
 
-VENV_DIR="${1:-.venv}"
-INSTALL_DEV="${INSTALL_DEV:-0}"
-
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN="python3"
 elif command -v python >/dev/null 2>&1; then
@@ -14,34 +11,68 @@ else
   exit 1
 fi
 
-echo "Creating virtual environment in ${VENV_DIR}"
-if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}"; then
-  echo >&2
-  echo "Failed to create a virtual environment." >&2
-  echo "On Ubuntu/WSL, install python3-venv first, for example:" >&2
-  echo "  sudo apt install python3-venv" >&2
-  exit 1
-fi
+MANAGER="conda"
+VENV_DIR=".venv"
+CONDA_ENV_NAME="himawari-wallpaper"
+PYTHON_VERSION="3.11"
+INSTALL_DEV=0
+SKIP_PLAYWRIGHT=0
 
-PYTHON_EXE="${VENV_DIR}/bin/python"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --manager)
+      MANAGER="$2"
+      shift 2
+      ;;
+    --conda)
+      MANAGER="conda"
+      shift
+      ;;
+    --venv-mode)
+      MANAGER="venv"
+      shift
+      ;;
+    --env-name)
+      CONDA_ENV_NAME="$2"
+      shift 2
+      ;;
+    --python-version)
+      PYTHON_VERSION="$2"
+      shift 2
+      ;;
+    --venv)
+      VENV_DIR="$2"
+      shift 2
+      ;;
+    --dev)
+      INSTALL_DEV=1
+      shift
+      ;;
+    --skip-playwright)
+      SKIP_PLAYWRIGHT=1
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
-echo "Upgrading pip"
-"${PYTHON_EXE}" -m pip install --upgrade pip
+ARGS=("scripts/bootstrap.py" "--manager" "$MANAGER")
 
-if [[ "${INSTALL_DEV}" == "1" ]]; then
-  echo "Installing project with dev dependencies"
-  "${PYTHON_EXE}" -m pip install -e ".[dev]"
+if [[ "$MANAGER" == "conda" ]]; then
+  ARGS+=("--conda-env-name" "$CONDA_ENV_NAME" "--python-version" "$PYTHON_VERSION")
 else
-  echo "Installing project"
-  "${PYTHON_EXE}" -m pip install -e .
+  ARGS+=("--venv" "$VENV_DIR")
 fi
 
-echo "Installing Playwright Chromium"
-"${PYTHON_EXE}" -m playwright install chromium
+if [[ "$INSTALL_DEV" == "1" ]]; then
+  ARGS+=("--dev")
+fi
 
-echo
-echo "Bootstrap complete."
-echo "Activate the venv with:"
-echo "  source ${VENV_DIR}/bin/activate"
-echo "Run one refresh with:"
-echo "  himawari-wallpaper --once"
+if [[ "$SKIP_PLAYWRIGHT" == "1" ]]; then
+  ARGS+=("--skip-playwright")
+fi
+
+"${PYTHON_BIN}" "${ARGS[@]}"

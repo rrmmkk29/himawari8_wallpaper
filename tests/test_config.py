@@ -15,6 +15,8 @@ def make_args(**overrides):
         "earth_height_ratio": None,
         "y_offset_ratio": None,
         "config": None,
+        "apply_wallpaper": None,
+        "sync_lock_screen": None,
         "target_url": None,
         "navigation_timeout_ms": None,
         "warmup_wait_ms": None,
@@ -32,6 +34,8 @@ def test_build_runtime_config_uses_defaults(monkeypatch, tmp_path: Path) -> None
     assert config.interval_sec == 3600
     assert config.max_zoom == 8
     assert config.output_dir.exists()
+    assert config.apply_wallpaper is True
+    assert config.sync_lock_screen is False
     assert config.target_url == "https://himawari.asia/"
     assert config.navigation_timeout_ms == 120000
     assert config.warmup_wait_ms == 15000
@@ -46,6 +50,8 @@ def test_build_runtime_config_reads_environment(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setenv("HIMAWARI_EARTH_HEIGHT_RATIO", "0.5")
     monkeypatch.setenv("HIMAWARI_Y_OFFSET_RATIO", "0.2")
     monkeypatch.setenv("HIMAWARI_OUTPUT_DIR", str(tmp_path / "env-output"))
+    monkeypatch.setenv("HIMAWARI_APPLY_WALLPAPER", "false")
+    monkeypatch.setenv("HIMAWARI_SYNC_LOCK_SCREEN", "true")
 
     config = build_runtime_config(make_args())
 
@@ -54,6 +60,8 @@ def test_build_runtime_config_reads_environment(monkeypatch, tmp_path: Path) -> 
     assert config.earth_height_ratio == 0.5
     assert config.y_offset_ratio == 0.2
     assert config.output_dir == (tmp_path / "env-output").resolve()
+    assert config.apply_wallpaper is False
+    assert config.sync_lock_screen is True
 
 
 def test_build_runtime_config_prefers_cli_over_environment(
@@ -81,6 +89,8 @@ def test_build_runtime_config_reads_json_config(monkeypatch, tmp_path: Path) -> 
                 "output_dir": "./from-config",
                 "earth_height_ratio": 0.55,
                 "y_offset_ratio": -0.1,
+                "apply_wallpaper": False,
+                "sync_lock_screen": True,
                 "target_url": "https://example.test/",
                 "navigation_timeout_ms": 90000,
                 "warmup_wait_ms": 5000,
@@ -98,6 +108,8 @@ def test_build_runtime_config_reads_json_config(monkeypatch, tmp_path: Path) -> 
     assert config.output_dir == (tmp_path / "from-config").resolve()
     assert config.earth_height_ratio == 0.55
     assert config.y_offset_ratio == -0.1
+    assert config.apply_wallpaper is False
+    assert config.sync_lock_screen is True
     assert config.target_url == "https://example.test/"
     assert config.navigation_timeout_ms == 90000
     assert config.warmup_wait_ms == 5000

@@ -6,6 +6,9 @@
 
 - Windows / macOS / Linux 自动识别
 - 跨平台壁纸设置和登录自启动
+- 可选的“仅下载/生成图片，不自动设置壁纸”模式
+- Windows 下可选的锁屏同步
+- 一个用于常用设置的简易 GUI
 - 可安装的 CLI 入口
 - 更顺手的初始化脚本
 - 基础测试与 CI
@@ -15,6 +18,7 @@
 程序会自动识别当前系统：
 
 - Windows：使用 `SystemParametersInfoW` 设置壁纸，支持启动菜单自启动
+- Windows 锁屏同步：通过 `UserProfilePersonalizationSettings` 做可选的最佳努力更新
 - macOS：使用 `osascript` 设置壁纸，支持 `LaunchAgents`
 - Linux：优先尝试 `plasma-apply-wallpaperimage`、`gsettings`、`xfconf-query`、`feh`，支持 `~/.config/autostart`
 
@@ -25,10 +29,18 @@
 
 ## 快速开始
 
-推荐优先使用统一的 Python 引导脚本：
+推荐优先使用 conda，统一引导脚本默认也会走 conda：
 
 ```bash
 python scripts/bootstrap.py
+conda activate himawari-wallpaper
+```
+
+如果你想显式指定 conda 环境名：
+
+```bash
+python scripts/bootstrap.py --manager conda --conda-env-name himawari-wallpaper
+conda activate himawari-wallpaper
 ```
 
 开发依赖一起安装：
@@ -50,25 +62,50 @@ python scripts/repo_check.py
 python -m himawari_wallpaper --config ./config.json --once
 ```
 
-### Windows 备选
+也可以直接使用仓库提供的 conda 环境文件：
+
+```bash
+conda env create -f environment.yml
+conda activate himawari-wallpaper
+```
+
+### Windows
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\bootstrap.ps1
+conda activate himawari-wallpaper
+himawari-wallpaper --once
+```
+
+Windows 下如果你仍然想用 venv 作为备选：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\bootstrap.ps1 -UseVenv -VenvDir .venv
 .\.venv\Scripts\Activate.ps1
 himawari-wallpaper --once
 ```
 
-### macOS / Linux 备选
+### macOS / Linux
 
 ```bash
 chmod +x scripts/bootstrap.sh
 ./scripts/bootstrap.sh
+conda activate himawari-wallpaper
+himawari-wallpaper --once
+```
+
+macOS / Linux 下如果你仍然想用 venv 作为备选：
+
+```bash
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh --venv-mode --venv .venv
 source .venv/bin/activate
 himawari-wallpaper --once
 ```
 
-如果你在 Ubuntu / WSL 上第一次执行时看到 `ensurepip is not available` 或 `python3 -m venv` 失败，先安装：
+如果你显式选择了 venv 备选方案，并且在 Ubuntu / WSL 上第一次执行时看到 `ensurepip is not available` 或 `python3 -m venv` 失败，先安装：
 
 ```bash
 sudo apt install python3-venv
@@ -76,24 +113,27 @@ sudo apt install python3-venv
 
 ## 手动安装
 
-如果你不想用 bootstrap 脚本，也可以手动执行：
+优先推荐的手动安装方式是 conda：
 
 ```bash
-python -m venv .venv
+conda env create -f environment.yml
+conda activate himawari-wallpaper
 ```
 
-激活虚拟环境后：
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install -e .
-python -m playwright install chromium
-```
-
-开发环境：
+如果你还想加开发依赖：
 
 ```bash
 python -m pip install -e ".[dev]"
+```
+
+如果你不想用 conda，`venv` 仍然保留为备选：
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+python -m playwright install chromium
 ```
 
 支持的环境变量覆盖：
@@ -104,6 +144,8 @@ python -m pip install -e ".[dev]"
 - `HIMAWARI_MAX_ZOOM`
 - `HIMAWARI_EARTH_HEIGHT_RATIO`
 - `HIMAWARI_Y_OFFSET_RATIO`
+- `HIMAWARI_APPLY_WALLPAPER`
+- `HIMAWARI_SYNC_LOCK_SCREEN`
 - `HIMAWARI_TARGET_URL`
 - `HIMAWARI_NAVIGATION_TIMEOUT_MS`
 - `HIMAWARI_WARMUP_WAIT_MS`
@@ -128,6 +170,11 @@ python -m pip install -e ".[dev]"
 
 这些参数默认值已经适合当前 Himawari 页面，通常不需要改，只有在源站结构或加载节奏变化时才建议调整。
 
+配置文件还支持行为开关：
+
+- `apply_wallpaper`
+- `sync_lock_screen`
+
 首次发现阶段的回退顺序现在是：
 
 1. 浏览器资源列表和页面图片
@@ -145,10 +192,22 @@ python -m pip install -e ".[dev]"
 himawari-wallpaper --once
 ```
 
+只生成 PNG 文件，由用户自行决定是否设置为壁纸：
+
+```bash
+himawari-wallpaper --once --download-only
+```
+
+Windows 下同时同步桌面壁纸和锁屏：
+
+```bash
+himawari-wallpaper --once --sync-lock-screen
+```
+
 Linux / WSL 抓图 smoke test，但不真正设置桌面壁纸：
 
 ```bash
-himawari-wallpaper --once --skip-set-wallpaper --out ./smoke-output
+himawari-wallpaper --once --download-only --out ./smoke-output
 ```
 
 持续运行：
@@ -169,6 +228,18 @@ himawari-wallpaper --install-startup --interval 3600
 himawari-wallpaper --remove-startup
 ```
 
+清理本地运行数据、配置文件和自启动：
+
+```bash
+himawari-wallpaper-cleanup --all
+```
+
+如果你使用的是 conda，也可以顺手把 conda 环境一起删除：
+
+```bash
+python scripts/uninstall.py --all --remove-conda-env himawari-wallpaper
+```
+
 指定输出目录：
 
 ```bash
@@ -180,6 +251,21 @@ himawari-wallpaper --once --out ./data
 ```bash
 himawari-wallpaper --config ./config.json --once
 ```
+
+打开简易设置 GUI：
+
+```bash
+himawari-wallpaper --gui
+# 或
+himawari-wallpaper-gui
+```
+
+GUI 现在可以保存常用设置、单次运行、安装或移除开机自启、打开输出目录、
+预览最新生成的壁纸、显示当前自启状态、显示最近一次生成的壁纸文件、
+执行可选项的本地清理/卸载。按钮区现在分成 `Run` 和 `Environment`
+两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
+`Enable startup at login` 开关控制，
+并在 Windows 下用最新生成的壁纸 PNG 测试锁屏同步。
 
 临时覆盖抓图参数：
 
@@ -214,7 +300,7 @@ WSL 测试结论：
 - `python3 scripts/repo_check.py` 可完整通过
 - `python3 -m playwright install chromium` 可完成浏览器安装
 - WSL 中的无头 Chromium 已实测可启动并成功访问页面
-- 可使用 `--once --skip-set-wallpaper` 跑真实抓图 smoke test 而不触发桌面壁纸设置
+- 可使用 `--once --download-only` 跑真实抓图 smoke test 而不触发桌面壁纸设置
 - 真实 smoke test 已成功生成 `last_source_meta.json`、原图 PNG 和壁纸 PNG
 - 首次发现失败时，`latest.json` 回退已实测可在 WSL 中拿到最新 D531106 时间并完成下载
 - `himawari.asia` 在 WSL Chromium 中首屏导航可能偏慢，默认导航超时已提升到 `120000ms`
@@ -262,12 +348,22 @@ python scripts/repo_check.py
 python scripts/pack_release.py --label local
 ```
 
+本地构建 Windows GUI 可执行发布包：
+
+```bash
+python -m pip install -e ".[release]"
+python scripts/build_windows_bundle.py --label local
+```
+
+这个发布包现在会额外附带一个可直接编辑的 `config.json`，并把 Windows 版本信息注入到 `.exe` 文件里。
+
 GitHub 自动发布：
 
-- 推送 `v0.1.0` 这种 tag 后，GitHub Actions 会自动构建 release zip
+- 推送 `v0.1.0` 这种 tag 后，GitHub Actions 会自动构建源码 zip 和 Windows GUI 发布包
 - 也可以手动触发 `Release Package` 工作流，只生成打包产物
 
 详细步骤见 [`docs/RELEASING.md`](docs/RELEASING.md)。
+Windows 可执行包的细节见 [`docs/BUILD_WINDOWS_EXE.md`](docs/BUILD_WINDOWS_EXE.md)。
 
 ## 上传 GitHub 前建议
 

@@ -6,6 +6,7 @@ from PIL import Image
 
 from himawari_wallpaper.app import (
     build_latest_json_meta,
+    build_lock_screen_path,
     choose_zoom_for_screen,
     compose_wallpaper,
     extract_probe_meta_from_html,
@@ -80,14 +81,7 @@ def test_build_latest_json_meta_uses_origin_and_date() -> None:
     assert meta["hhmmss"] == "125000"
 
 
-def test_persist_wallpaper_outputs_can_skip_apply(monkeypatch, tmp_path: Path) -> None:
-    calls: list[Path] = []
-
-    def fake_set_wallpaper(path: Path) -> None:
-        calls.append(path)
-
-    monkeypatch.setattr("himawari_wallpaper.app.set_wallpaper", fake_set_wallpaper)
-
+def test_persist_wallpaper_outputs_only_writes_files(tmp_path: Path) -> None:
     earth = Image.new("RGB", (10, 10), (255, 255, 255))
     wallpaper = Image.new("RGB", (20, 20), (0, 0, 0))
     origin_path = tmp_path / "origin.png"
@@ -98,9 +92,17 @@ def test_persist_wallpaper_outputs_can_skip_apply(monkeypatch, tmp_path: Path) -
         wallpaper=wallpaper,
         origin_png_path=origin_path,
         wallpaper_png_path=wallpaper_path,
-        apply_wallpaper=False,
     )
 
     assert origin_path.exists()
     assert wallpaper_path.exists()
-    assert calls == []
+
+
+def test_build_lock_screen_path_is_unique(tmp_path: Path) -> None:
+    first = build_lock_screen_path(tmp_path, "20260416_120000")
+    second = build_lock_screen_path(tmp_path, "20260416_120000")
+
+    assert first.parent == tmp_path
+    assert first.name.startswith("lockscreen_20260416_120000_")
+    assert second.name.startswith("lockscreen_20260416_120000_")
+    assert first != second

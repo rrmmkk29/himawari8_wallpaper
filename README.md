@@ -6,6 +6,9 @@ A dynamic wallpaper project based on Himawari satellite imagery, refactored into
 
 - Automatic Windows / macOS / Linux detection
 - Cross-platform wallpaper application and login auto-start
+- Optional download-only mode so users can decide whether to apply images manually
+- Optional Windows lock-screen sync
+- A simple GUI for common settings
 - An installable CLI entry point
 - Easier bootstrap scripts
 - Baseline tests and CI
@@ -15,6 +18,7 @@ A dynamic wallpaper project based on Himawari satellite imagery, refactored into
 The application detects the current platform automatically:
 
 - Windows: uses `SystemParametersInfoW` and supports Startup-folder auto-start
+- Windows lock screen sync: uses `UserProfilePersonalizationSettings` as an optional best-effort feature
 - macOS: uses `osascript` and supports `LaunchAgents`
 - Linux: tries `plasma-apply-wallpaperimage`, `gsettings`, `xfconf-query`, and `feh`, and supports `~/.config/autostart`
 
@@ -25,10 +29,18 @@ Notes:
 
 ## Quick Start
 
-Recommended universal bootstrap:
+Recommended bootstrap, using conda by default:
 
 ```bash
 python scripts/bootstrap.py
+conda activate himawari-wallpaper
+```
+
+Create a conda environment explicitly with a custom name:
+
+```bash
+python scripts/bootstrap.py --manager conda --conda-env-name himawari-wallpaper
+conda activate himawari-wallpaper
 ```
 
 Install development dependencies too:
@@ -50,25 +62,50 @@ If you prefer file-based runtime configuration instead of long CLI commands:
 python -m himawari_wallpaper --config ./config.json --once
 ```
 
-### Windows Alternative
+Create directly from the provided conda environment file:
+
+```bash
+conda env create -f environment.yml
+conda activate himawari-wallpaper
+```
+
+### Windows
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\bootstrap.ps1
+conda activate himawari-wallpaper
+himawari-wallpaper --once
+```
+
+Windows venv fallback:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\bootstrap.ps1 -UseVenv -VenvDir .venv
 .\.venv\Scripts\Activate.ps1
 himawari-wallpaper --once
 ```
 
-### macOS / Linux Alternative
+### macOS / Linux
 
 ```bash
 chmod +x scripts/bootstrap.sh
 ./scripts/bootstrap.sh
+conda activate himawari-wallpaper
+himawari-wallpaper --once
+```
+
+macOS / Linux venv fallback:
+
+```bash
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh --venv-mode --venv .venv
 source .venv/bin/activate
 himawari-wallpaper --once
 ```
 
-If you see `ensurepip is not available` or `python3 -m venv` fails on Ubuntu / WSL, install:
+If you explicitly choose the venv fallback and see `ensurepip is not available` or `python3 -m venv` fails on Ubuntu / WSL, install:
 
 ```bash
 sudo apt install python3-venv
@@ -76,24 +113,27 @@ sudo apt install python3-venv
 
 ## Manual Installation
 
-If you do not want to use the bootstrap scripts:
+Preferred manual installation with conda:
 
 ```bash
-python -m venv .venv
+conda env create -f environment.yml
+conda activate himawari-wallpaper
 ```
 
-After activating the virtual environment:
-
-```bash
-python -m pip install --upgrade pip
-python -m pip install -e .
-python -m playwright install chromium
-```
-
-For development:
+If you want development dependencies too:
 
 ```bash
 python -m pip install -e ".[dev]"
+```
+
+If you do not want to use conda, venv remains available as a fallback:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+python -m playwright install chromium
 ```
 
 ## Environment Variables
@@ -106,6 +146,8 @@ Supported runtime overrides:
 - `HIMAWARI_MAX_ZOOM`
 - `HIMAWARI_EARTH_HEIGHT_RATIO`
 - `HIMAWARI_Y_OFFSET_RATIO`
+- `HIMAWARI_APPLY_WALLPAPER`
+- `HIMAWARI_SYNC_LOCK_SCREEN`
 - `HIMAWARI_TARGET_URL`
 - `HIMAWARI_NAVIGATION_TIMEOUT_MS`
 - `HIMAWARI_WARMUP_WAIT_MS`
@@ -130,6 +172,11 @@ The config file also supports network-related settings:
 
 Those defaults are suitable for the current Himawari site and normally do not need to be changed unless the upstream site behavior changes.
 
+The config file also supports behavior flags:
+
+- `apply_wallpaper`
+- `sync_lock_screen`
+
 Current first-run discovery fallback order:
 
 1. Browser resource entries and page images
@@ -147,10 +194,22 @@ Refresh once:
 himawari-wallpaper --once
 ```
 
+Generate the PNG files only and let the user decide whether to apply them:
+
+```bash
+himawari-wallpaper --once --download-only
+```
+
+On Windows, sync the lock screen together with the wallpaper:
+
+```bash
+himawari-wallpaper --once --sync-lock-screen
+```
+
 Linux / WSL smoke test without touching the desktop wallpaper:
 
 ```bash
-himawari-wallpaper --once --skip-set-wallpaper --out ./smoke-output
+himawari-wallpaper --once --download-only --out ./smoke-output
 ```
 
 Run continuously:
@@ -171,6 +230,18 @@ Remove login auto-start:
 himawari-wallpaper --remove-startup
 ```
 
+Clean local app data, config, and startup entry:
+
+```bash
+himawari-wallpaper-cleanup --all
+```
+
+If you used conda, also remove the conda environment:
+
+```bash
+python scripts/uninstall.py --all --remove-conda-env himawari-wallpaper
+```
+
 Use a custom output directory:
 
 ```bash
@@ -182,6 +253,22 @@ Use a config file:
 ```bash
 himawari-wallpaper --config ./config.json --once
 ```
+
+Open the simple settings GUI:
+
+```bash
+himawari-wallpaper --gui
+# or
+himawari-wallpaper-gui
+```
+
+The GUI can save common settings, run one update, install or remove startup,
+open the output folder, preview the latest generated wallpaper, show current startup status,
+show the latest generated wallpaper file, run selectable local cleanup / uninstall actions,
+and test Windows lock-screen sync. The action area is grouped into `Run` and
+`Environment` sections to keep everyday actions separated from system-level tasks.
+Startup is controlled with an `Enable startup at login` toggle in the GUI.
+with the latest generated wallpaper PNG.
 
 Temporarily override network settings:
 
@@ -216,7 +303,7 @@ WSL validation summary:
 - `python3 scripts/repo_check.py` passes
 - `python3 -m playwright install chromium` works
 - Headless Chromium launches successfully inside WSL
-- A real `--once --skip-set-wallpaper` smoke test generated `last_source_meta.json`, the original PNG, and the wallpaper PNG
+- A real `--once --download-only` smoke test generated `last_source_meta.json`, the original PNG, and the wallpaper PNG
 - The `latest.json` fallback successfully resolved the latest `D531106` timestamp in WSL when browser-side discovery failed
 - `himawari.asia` can load slowly in WSL Chromium, so the default navigation timeout is now `120000ms`
 - Minimal Ubuntu / WSL installations may lack `python3-venv`, which affects the first run of `bootstrap.py` / `bootstrap.sh`
@@ -263,12 +350,23 @@ python scripts/repo_check.py
 python scripts/pack_release.py --label local
 ```
 
+Local Windows GUI bundle:
+
+```bash
+python -m pip install -e ".[release]"
+python scripts/build_windows_bundle.py --label local
+```
+
+That bundle now includes a ready-to-edit `config.json` copy and injects Windows version metadata into the executable.
+
 GitHub automated releases:
 
 - Pushing a tag like `v0.1.0` triggers the release packaging workflow
+- The release workflow now publishes both a source zip and a Windows GUI bundle
 - You can also run the `Release Package` workflow manually to build release artifacts only
 
 See [`docs/RELEASING.md`](docs/RELEASING.md) for the detailed release process.
+For Windows executable details, see [`docs/BUILD_WINDOWS_EXE.md`](docs/BUILD_WINDOWS_EXE.md).
 
 ## Before Uploading To GitHub
 

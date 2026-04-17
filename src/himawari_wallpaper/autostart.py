@@ -18,6 +18,8 @@ def install_startup(
     earth_height_ratio: float,
     y_offset_ratio: float,
     max_zoom: int,
+    apply_wallpaper: bool,
+    sync_lock_screen: bool,
     config_path: Path | None = None,
 ) -> Path:
     current_platform = detect_platform()
@@ -27,6 +29,8 @@ def install_startup(
         earth_height_ratio=earth_height_ratio,
         y_offset_ratio=y_offset_ratio,
         max_zoom=max_zoom,
+        apply_wallpaper=apply_wallpaper,
+        sync_lock_screen=sync_lock_screen,
         config_path=config_path,
         background=current_platform == WINDOWS,
     )
@@ -44,20 +48,27 @@ def install_startup(
 
 
 def remove_startup() -> bool:
-    current_platform = detect_platform()
-    if current_platform == WINDOWS:
-        target = _get_windows_startup_folder() / STARTUP_BAT_NAME
-    elif current_platform == MACOS:
-        target = _get_launch_agents_dir() / LAUNCH_AGENT_NAME
-    elif current_platform == LINUX:
-        target = _get_linux_autostart_dir() / AUTOSTART_DESKTOP_NAME
-    else:
-        raise RuntimeError(f"Unsupported platform: {current_platform}")
+    target = get_startup_entry_path()
 
     if target.exists():
         target.unlink()
         return True
     return False
+
+
+def has_startup() -> bool:
+    return get_startup_entry_path().exists()
+
+
+def get_startup_entry_path() -> Path:
+    current_platform = detect_platform()
+    if current_platform == WINDOWS:
+        return _get_windows_startup_folder() / STARTUP_BAT_NAME
+    if current_platform == MACOS:
+        return _get_launch_agents_dir() / LAUNCH_AGENT_NAME
+    if current_platform == LINUX:
+        return _get_linux_autostart_dir() / AUTOSTART_DESKTOP_NAME
+    raise RuntimeError(f"Unsupported platform: {current_platform}")
 
 
 def _build_command(
@@ -66,6 +77,8 @@ def _build_command(
     earth_height_ratio: float,
     y_offset_ratio: float,
     max_zoom: int,
+    apply_wallpaper: bool,
+    sync_lock_screen: bool,
     config_path: Path | None,
     background: bool,
 ) -> list[str]:
@@ -86,6 +99,10 @@ def _build_command(
         "--max-zoom",
         str(max_zoom),
     ]
+    if not apply_wallpaper:
+        command.append("--download-only")
+    if sync_lock_screen:
+        command.append("--sync-lock-screen")
     if config_path is not None:
         command.extend(["--config", str(config_path)])
     return command

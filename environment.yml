@@ -1,0 +1,10 @@
+name: himawari-wallpaper
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pillow>=10
+  - pip:
+      - playwright>=1.45.0
+      - -e .

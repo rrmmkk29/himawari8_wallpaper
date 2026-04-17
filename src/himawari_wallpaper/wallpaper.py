@@ -28,6 +28,15 @@ def set_wallpaper(img_path: Path) -> None:
     raise RuntimeError(f"Unsupported platform: {current_platform}")
 
 
+def set_lock_screen(img_path: Path) -> None:
+    current_platform = detect_platform()
+
+    if current_platform != WINDOWS:
+        raise RuntimeError("Lock screen sync is currently supported on Windows only.")
+
+    _set_lock_screen_windows(img_path)
+
+
 def _set_wallpaper_windows(img_path: Path) -> None:
     import ctypes
 
@@ -46,6 +55,18 @@ def _set_wallpaper_windows(img_path: Path) -> None:
     )
     if not ok:
         raise RuntimeError("Failed to set Windows wallpaper.")
+
+
+def _set_lock_screen_windows(img_path: Path) -> None:
+    command = [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        _build_lock_screen_script(img_path.resolve()),
+    ]
+    _run_command(command, "Failed to set Windows lock screen.")
 
 
 def _set_wallpaper_macos(img_path: Path) -> None:
@@ -131,6 +152,55 @@ def _run_if_available(command: list[str], binary_name: str) -> None:
     if not shutil.which(binary_name):
         raise RuntimeError(f"{binary_name} not available")
     _run_command(command, f"Failed to run {binary_name}.")
+
+
+def _build_lock_screen_script(img_path: Path) -> str:
+    escaped_path = str(img_path).replace("'", "''")
+    return rf"""
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+[Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime] | Out-Null
+[Windows.System.UserProfile.UserProfilePersonalizationSettings, Windows.System.UserProfile, ContentType=WindowsRuntime] | Out-Null
+
+if (-not [Windows.System.UserProfile.UserProfilePersonalizationSettings]::IsSupported()) {{
+    throw 'Windows lock screen personalization is not supported on this system.'
+}}
+
+function Invoke-WinRtAsyncResult {{
+    param(
+        [Parameter(Mandatory = $true)]
+        $Operation,
+        [Parameter(Mandatory = $true)]
+        [Type] $ResultType
+    )
+
+    $method = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{
+        $_.Name -eq 'AsTask' -and
+        $_.IsGenericMethod -and
+        $_.GetParameters().Count -eq 1
+    }} | Select-Object -First 1
+
+    if ($null -eq $method) {{
+        throw 'Unable to bridge WinRT async operation to a .NET task.'
+    }}
+
+    $task = $method.MakeGenericMethod($ResultType).Invoke($null, @($Operation))
+    return $task.GetAwaiter().GetResult()
+}}
+
+$file = Invoke-WinRtAsyncResult `
+    -Operation ([Windows.Storage.StorageFile]::GetFileFromPathAsync('{escaped_path}')) `
+    -ResultType ([Windows.Storage.StorageFile])
+
+$settings = [Windows.System.UserProfile.UserProfilePersonalizationSettings]::Current
+$result = Invoke-WinRtAsyncResult `
+    -Operation ($settings.TrySetLockScreenImageAsync($file)) `
+    -ResultType ([bool])
+
+if (-not $result) {{
+    throw 'Windows rejected the lock screen image update.'
+}}
+"""
 
 
 def _run_command(command: list[str], error_message: str) -> None:

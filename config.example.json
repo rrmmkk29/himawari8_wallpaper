@@ -4,6 +4,8 @@
   "output_dir": "./data",
   "earth_height_ratio": 0.6,
   "y_offset_ratio": 0.0,
+  "apply_wallpaper": true,
+  "sync_lock_screen": false,
   "target_url": "https://himawari.asia/",
   "navigation_timeout_ms": 120000,
   "warmup_wait_ms": 15000,

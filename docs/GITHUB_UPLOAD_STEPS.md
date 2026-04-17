@@ -2,25 +2,42 @@
 
 ## 1. 本地先跑通
 
-Windows:
+Windows，推荐 conda：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 python scripts/bootstrap.py --dev
+conda activate himawari-wallpaper
+python scripts/repo_check.py
+```
+
+Windows，venv 备选：
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+python scripts/bootstrap.py --manager venv --dev --venv .venv
 .\.venv\Scripts\Activate.ps1
 python scripts/repo_check.py
 ```
 
-macOS / Linux:
+macOS / Linux，推荐 conda：
+
+```bash
+python scripts/bootstrap.py --dev
+conda activate himawari-wallpaper
+python scripts/repo_check.py
+```
+
+macOS / Linux，venv 备选：
 
 ```bash
 chmod +x scripts/bootstrap.sh
-python scripts/bootstrap.py --dev
+python scripts/bootstrap.py --manager venv --dev --venv .venv
 source .venv/bin/activate
 python scripts/repo_check.py
 ```
 
-如果你在 Ubuntu / WSL 的精简环境中首次执行失败，先安装：
+如果你显式使用 venv 备选方案，并且在 Ubuntu / WSL 的精简环境中首次执行失败，先安装：
 
 ```bash
 sudo apt install python3-venv

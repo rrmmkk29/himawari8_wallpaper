@@ -14,6 +14,8 @@ CONFIG_KEYS = {
     "output_dir",
     "earth_height_ratio",
     "y_offset_ratio",
+    "apply_wallpaper",
+    "sync_lock_screen",
     "target_url",
     "navigation_timeout_ms",
     "warmup_wait_ms",
@@ -29,6 +31,8 @@ class AppConfig:
     output_dir: Path = Path(".")
     earth_height_ratio: float = 0.6
     y_offset_ratio: float = 0.0
+    apply_wallpaper: bool = True
+    sync_lock_screen: bool = False
     target_url: str = "https://himawari.asia/"
     navigation_timeout_ms: int = 120000
     warmup_wait_ms: int = 15000
@@ -75,6 +79,18 @@ def build_runtime_config(args: argparse.Namespace) -> AppConfig:
         "HIMAWARI_Y_OFFSET_RATIO",
         file_values.get("y_offset_ratio"),
         0.0,
+    )
+    apply_wallpaper = _get_bool_setting(
+        getattr(args, "apply_wallpaper", None),
+        "HIMAWARI_APPLY_WALLPAPER",
+        file_values.get("apply_wallpaper"),
+        True,
+    )
+    sync_lock_screen = _get_bool_setting(
+        getattr(args, "sync_lock_screen", None),
+        "HIMAWARI_SYNC_LOCK_SCREEN",
+        file_values.get("sync_lock_screen"),
+        False,
     )
     target_url = _get_str_setting(
         getattr(args, "target_url", None),
@@ -147,12 +163,39 @@ def build_runtime_config(args: argparse.Namespace) -> AppConfig:
         output_dir=output_dir,
         earth_height_ratio=earth_height_ratio,
         y_offset_ratio=y_offset_ratio,
+        apply_wallpaper=apply_wallpaper,
+        sync_lock_screen=sync_lock_screen,
         target_url=target_url,
         navigation_timeout_ms=navigation_timeout_ms,
         warmup_wait_ms=warmup_wait_ms,
         probe_step_seconds=probe_step_seconds,
         probe_lookback_steps=probe_lookback_steps,
         config_path=config_path,
+    )
+
+
+def config_to_file_values(config: AppConfig) -> dict[str, Any]:
+    return {
+        "interval_sec": config.interval_sec,
+        "max_zoom": config.max_zoom,
+        "output_dir": str(config.output_dir),
+        "earth_height_ratio": config.earth_height_ratio,
+        "y_offset_ratio": config.y_offset_ratio,
+        "apply_wallpaper": config.apply_wallpaper,
+        "sync_lock_screen": config.sync_lock_screen,
+        "target_url": config.target_url,
+        "navigation_timeout_ms": config.navigation_timeout_ms,
+        "warmup_wait_ms": config.warmup_wait_ms,
+        "probe_step_seconds": config.probe_step_seconds,
+        "probe_lookback_steps": config.probe_lookback_steps,
+    }
+
+
+def save_config_file(config_path: Path, values: dict[str, Any]) -> None:
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps(values, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -239,3 +282,35 @@ def _get_str_setting(
     if config_value is not None:
         return str(config_value)
     return default
+
+
+def _get_bool_setting(
+    cli_value: Optional[bool],
+    env_name: str,
+    config_value: Any,
+    default: bool,
+) -> bool:
+    if cli_value is not None:
+        return cli_value
+
+    value = os.environ.get(env_name)
+    if value is not None:
+        return _parse_bool(value, env_name)
+
+    if config_value is not None:
+        return _parse_bool(config_value, "config")
+
+    return default
+
+
+def _parse_bool(value: Any, source: str) -> bool:
+    if isinstance(value, bool):
+        return value
+
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+
+    raise ValueError(f"Invalid boolean value from {source}: {value}")

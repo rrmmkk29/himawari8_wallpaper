@@ -369,7 +369,7 @@ python scripts/build_windows_bundle.py --label local
 
 GitHub 自动发布：
 
-- 推送 `v0.2.0` 这种 tag 后，GitHub Actions 会自动构建源码 zip 和 Windows GUI 发布包
+- 推送 `v0.2.1` 这种 tag 后，GitHub Actions 会自动构建源码 zip 和 Windows GUI 发布包
 - 也可以手动触发 `Release Package` 工作流，只生成打包产物
 
 详细步骤见 [`docs/RELEASING.md`](docs/RELEASING.md)。

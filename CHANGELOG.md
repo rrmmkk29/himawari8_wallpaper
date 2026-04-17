@@ -3,6 +3,9 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.1
+- Fixed package metadata so editable installs and local release builds work with newer `setuptools`.
+
 ## 0.2.0
 - Switched the primary image discovery path to pure HTTP with `latest.json`, HTML probe, and cached probe fallbacks.
 - Kept Playwright as an optional browser fallback instead of a required default dependency.

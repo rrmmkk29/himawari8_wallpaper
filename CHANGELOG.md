@@ -3,6 +3,9 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.2
+- Improved Windows lock screen sync by staging normalized local image files and adding an official `LockScreen.SetImageFileAsync(...)` fallback when `UserProfilePersonalizationSettings` is rejected.
+
 ## 0.2.1
 - Fixed package metadata so editable installs and local release builds work with newer `setuptools`.
 

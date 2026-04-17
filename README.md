@@ -371,7 +371,7 @@ That bundle now includes a ready-to-edit `config.json` copy and injects Windows 
 
 GitHub automated releases:
 
-- Pushing a tag like `v0.2.1` triggers the release packaging workflow
+- Pushing a tag like `v0.2.2` triggers the release packaging workflow
 - The release workflow now publishes both a source zip and a Windows GUI bundle
 - You can also run the `Release Package` workflow manually to build release artifacts only
 

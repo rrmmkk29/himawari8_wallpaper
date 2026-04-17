@@ -1,13 +1,20 @@
+import os
 import shutil
 import subprocess
+import re
 from pathlib import Path
 from typing import Callable
+from uuid import uuid4
 
 from PIL import Image
 
-from .platforms import LINUX, MACOS, WINDOWS, detect_platform
+from .platforms import APP_DIR_NAME, LINUX, MACOS, WINDOWS, detect_platform
 
 CURRENT_WALLPAPER_BMP = "wallpaper_current.bmp"
+POWERSHELL_THROW_RE = re.compile(r"throw\s+'([^']+)'", re.IGNORECASE)
+LOCK_SCREEN_STAGE_DIR_NAME = "lockscreen-stage"
+LOCK_SCREEN_STAGE_PREFIX = "lockscreen-source"
+KEEP_LOCK_SCREEN_STAGE_FILES = 8
 
 
 def set_wallpaper(img_path: Path) -> None:
@@ -58,15 +65,26 @@ def _set_wallpaper_windows(img_path: Path) -> None:
 
 
 def _set_lock_screen_windows(img_path: Path) -> None:
-    command = [
-        "powershell.exe",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        _build_lock_screen_script(img_path.resolve()),
-    ]
-    _run_command(command, "Failed to set Windows lock screen.")
+    candidates = _prepare_windows_lock_screen_candidates(img_path)
+    errors: list[str] = []
+
+    for candidate in candidates:
+        command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            _build_lock_screen_script(candidate),
+        ]
+        try:
+            _run_command(command, "Failed to set Windows lock screen.")
+            return
+        except RuntimeError as exc:
+            errors.append(str(exc))
+
+    joined = "; ".join(errors) if errors else "no candidate lock screen image was generated"
+    raise RuntimeError(joined)
 
 
 def _set_wallpaper_macos(img_path: Path) -> None:
@@ -160,6 +178,7 @@ def _build_lock_screen_script(img_path: Path) -> str:
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 [Windows.Storage.StorageFile, Windows.Storage, ContentType=WindowsRuntime] | Out-Null
+[Windows.System.UserProfile.LockScreen, Windows.System.UserProfile, ContentType=WindowsRuntime] | Out-Null
 [Windows.System.UserProfile.UserProfilePersonalizationSettings, Windows.System.UserProfile, ContentType=WindowsRuntime] | Out-Null
 
 if (-not [Windows.System.UserProfile.UserProfilePersonalizationSettings]::IsSupported()) {{
@@ -188,6 +207,26 @@ function Invoke-WinRtAsyncResult {{
     return $task.GetAwaiter().GetResult()
 }}
 
+function Invoke-WinRtAsyncAction {{
+    param(
+        [Parameter(Mandatory = $true)]
+        $Action
+    )
+
+    $method = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {{
+        $_.Name -eq 'AsTask' -and
+        -not $_.IsGenericMethod -and
+        $_.GetParameters().Count -eq 1
+    }} | Select-Object -First 1
+
+    if ($null -eq $method) {{
+        throw 'Unable to bridge WinRT async action to a .NET task.'
+    }}
+
+    $task = $method.Invoke($null, @($Action))
+    $task.GetAwaiter().GetResult() | Out-Null
+}}
+
 $file = Invoke-WinRtAsyncResult `
     -Operation ([Windows.Storage.StorageFile]::GetFileFromPathAsync('{escaped_path}')) `
     -ResultType ([Windows.Storage.StorageFile])
@@ -197,10 +236,48 @@ $result = Invoke-WinRtAsyncResult `
     -Operation ($settings.TrySetLockScreenImageAsync($file)) `
     -ResultType ([bool])
 
-if (-not $result) {{
-    throw 'Windows rejected the lock screen image update.'
+if ($result) {{
+    return
 }}
+
+Invoke-WinRtAsyncAction `
+    -Action ([Windows.System.UserProfile.LockScreen]::SetImageFileAsync($file))
 """
+
+
+def _get_windows_lock_screen_stage_dir() -> Path:
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return base / APP_DIR_NAME / LOCK_SCREEN_STAGE_DIR_NAME
+
+
+def _prepare_windows_lock_screen_candidates(img_path: Path) -> list[Path]:
+    source = img_path.resolve()
+    stage_dir = _get_windows_lock_screen_stage_dir()
+    stage_dir.mkdir(parents=True, exist_ok=True)
+
+    unique_name = f"{LOCK_SCREEN_STAGE_PREFIX}_{uuid4().hex}"
+    png_path = stage_dir / f"{unique_name}.png"
+    jpg_path = stage_dir / f"{unique_name}.jpg"
+
+    image = Image.open(source).convert("RGB")
+    image.save(png_path, "PNG")
+    image.save(jpg_path, "JPEG", quality=95)
+
+    _cleanup_old_windows_lock_screen_candidates(stage_dir)
+    return [png_path.resolve(), jpg_path.resolve()]
+
+
+def _cleanup_old_windows_lock_screen_candidates(stage_dir: Path) -> None:
+    matches = sorted(
+        stage_dir.glob(f"{LOCK_SCREEN_STAGE_PREFIX}_*.*"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_path in matches[KEEP_LOCK_SCREEN_STAGE_FILES:]:
+        try:
+            old_path.unlink()
+        except Exception:
+            pass
 
 
 def _run_command(command: list[str], error_message: str) -> None:
@@ -209,6 +286,37 @@ def _run_command(command: list[str], error_message: str) -> None:
     except FileNotFoundError as exc:
         raise RuntimeError(f"{error_message} Missing command: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr.strip() if exc.stderr else ""
+        stderr = _format_command_error_output(exc.stderr or exc.stdout or "")
         suffix = f" {stderr}" if stderr else ""
         raise RuntimeError(f"{error_message}{suffix}") from exc
+
+
+def _format_command_error_output(output: str) -> str:
+    text = output.strip()
+    if not text:
+        return ""
+
+    throw_match = POWERSHELL_THROW_RE.search(text)
+    if throw_match:
+        return _humanize_powershell_throw(throw_match.group(1))
+
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    return lines[-1]
+
+
+def _humanize_powershell_throw(message: str) -> str:
+    if message == "Windows rejected the lock screen image update.":
+        return (
+            "Windows rejected the lock screen image update. "
+            "This usually means lock screen personalization is blocked by current "
+            "Windows settings, policy, or lock screen mode."
+        )
+
+    if message == "Windows lock screen personalization is not supported on this system.":
+        return (
+            "Windows lock screen personalization is not supported on this system."
+        )
+
+    return message

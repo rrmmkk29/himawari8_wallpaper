@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -23,7 +25,15 @@ SUPPORT_FILES = (
     (Path("README.zh-CN.md"), "README.zh-CN.md"),
     (Path("config.example.json"), "config.example.json"),
 )
-GENERATED_BUNDLE_FILES = ("config.json",)
+GENERATED_BUNDLE_FILES = (
+    "config.json",
+    "run_himawari.py",
+    "Run Himawari Wallpaper.bat",
+    "Run Himawari Once.bat",
+    "Open Himawari Settings.bat",
+)
+SOURCE_DIR_NAME = "src"
+LAUNCHER_SCRIPT_NAME = "run_himawari.py"
 
 
 def parse_args() -> argparse.Namespace:
@@ -169,27 +179,160 @@ def run_pyinstaller(version_file: Path) -> Path:
     return exe_path
 
 
-def create_bundle_archive(output_path: Path, exe_path: Path) -> int:
+def collect_bundle_mappings(
+    exe_path: Path,
+) -> list[tuple[Path, Path]]:
+    mappings: list[tuple[Path, Path]] = [
+        (exe_path, Path(exe_path.name)),
+        (ROOT / SOURCE_DIR_NAME, Path(SOURCE_DIR_NAME)),
+    ]
+
+    for relative_path, archive_name in SUPPORT_FILES:
+        mappings.append((ROOT / relative_path, Path(archive_name)))
+
+    return mappings
+
+
+def build_python_launcher_script() -> str:
+    return """from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parent
+SOURCE_DIR = ROOT / "src"
+if str(SOURCE_DIR) not in sys.path:
+    sys.path.insert(0, str(SOURCE_DIR))
+
+from himawari_wallpaper.cli import main
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+
+def build_run_bat_contents(run_once: bool) -> str:
+    mode_flag = "--once" if run_once else "--run"
+    return "\n".join(
+        [
+            "@echo off",
+            "setlocal",
+            "set SCRIPT_DIR=%~dp0",
+            "cd /d \"%SCRIPT_DIR%\"",
+            "call :resolve_python PYTHON_CMD",
+            "if errorlevel 1 exit /b 1",
+            "\"%PYTHON_CMD%\" \"%SCRIPT_DIR%run_himawari.py\" "
+            f"{mode_flag} --config \"%SCRIPT_DIR%config.json\"",
+            "endlocal",
+            "exit /b %errorlevel%",
+            "",
+            ":resolve_python",
+            "set \"%~1=\"",
+            "if defined CONDA_PREFIX if exist \"%CONDA_PREFIX%\\python.exe\" (",
+            "    set \"%~1=%CONDA_PREFIX%\\python.exe\"",
+            "    exit /b 0",
+            ")",
+            "for %%I in (py.exe py python.exe python) do (",
+            "    call :find_candidate \"%%~I\" FOUND_PYTHON",
+            "    if defined FOUND_PYTHON (",
+            "        set \"%~1=%FOUND_PYTHON%\"",
+            "        exit /b 0",
+            "    )",
+            ")",
+            "echo Could not find a usable Python interpreter.",
+            "echo Install Python or launch this script from an activated conda environment.",
+            "exit /b 1",
+            "",
+            ":find_candidate",
+            "set \"%~2=\"",
+            "for /f \"delims=\" %%P in ('where %~1 2^>nul') do (",
+            "    echo %%~fP| findstr /i /c:\"\\WindowsApps\\\" >nul",
+            "    if errorlevel 1 (",
+            "        set \"%~2=%%~fP\"",
+            "        exit /b 0",
+            "    )",
+            ")",
+            "exit /b 1",
+        ]
+    ) + "\n"
+
+
+def build_gui_bat_contents(exe_name: str) -> str:
+    return "\n".join(
+        [
+            "@echo off",
+            "setlocal",
+            "set SCRIPT_DIR=%~dp0",
+            "cd /d \"%SCRIPT_DIR%\"",
+            f"start \"\" \"%SCRIPT_DIR%{exe_name}\"",
+            "endlocal",
+        ]
+    ) + "\n"
+
+
+def build_generated_bundle_contents(exe_name: str) -> dict[str, str]:
+    config_source = ROOT / "config.example.json"
+    return {
+        "config.json": config_source.read_text(encoding="utf-8"),
+        LAUNCHER_SCRIPT_NAME: build_python_launcher_script(),
+        "Run Himawari Wallpaper.bat": build_run_bat_contents(run_once=False),
+        "Run Himawari Once.bat": build_run_bat_contents(run_once=True),
+        "Open Himawari Settings.bat": build_gui_bat_contents(exe_name),
+    }
+
+
+def _ignore_copy_names(_dir: str, entries: list[str]) -> set[str]:
+    ignored: set[str] = set()
+    for name in entries:
+        if name == "__pycache__" or name.endswith((".pyc", ".pyo")):
+            ignored.add(name)
+    return ignored
+
+
+def build_bundle_directory(
+    bundle_dir: Path,
+    exe_path: Path,
+) -> int:
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    for source_path, relative_target in collect_bundle_mappings(exe_path=exe_path):
+        destination_path = bundle_dir / relative_target
+        if source_path.is_dir():
+            shutil.copytree(
+                source_path,
+                destination_path,
+                dirs_exist_ok=True,
+                ignore=_ignore_copy_names,
+            )
+        else:
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, destination_path)
+
+    for relative_target, content in build_generated_bundle_contents(exe_path.name).items():
+        destination_path = bundle_dir / relative_target
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        destination_path.write_text(content, encoding="utf-8")
+
+    return sum(1 for path in bundle_dir.rglob("*") if path.is_file())
+
+
+def create_bundle_archive(
+    output_path: Path,
+    exe_path: Path,
+) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    archive_root = output_path.stem
-    added_files = 0
-    with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.write(exe_path, Path(archive_root) / exe_path.name)
-        added_files += 1
+    with tempfile.TemporaryDirectory(prefix="himawari-bundle-") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        archive_root = temp_dir / output_path.stem
+        build_bundle_directory(archive_root, exe_path=exe_path)
 
-        for relative_path, archive_name in SUPPORT_FILES:
-            source_path = ROOT / relative_path
-            archive.write(source_path, Path(archive_root) / archive_name)
-            added_files += 1
-
-        config_source = ROOT / "config.example.json"
-        for archive_name in GENERATED_BUNDLE_FILES:
-            archive.writestr(
-                str(Path(archive_root) / archive_name),
-                config_source.read_text(encoding="utf-8"),
-            )
-            added_files += 1
+        added_files = 0
+        with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for source_path in sorted(archive_root.rglob("*")):
+                if not source_path.is_file():
+                    continue
+                archive.write(source_path, source_path.relative_to(temp_dir))
+                added_files += 1
 
     return added_files
 

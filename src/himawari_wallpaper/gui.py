@@ -21,8 +21,14 @@ def main(initial_config: AppConfig | None = None) -> None:
     config = initial_config or _build_default_config()
     root = tk.Tk()
     root.title("Himawari Wallpaper Settings")
-    root.geometry("860x560")
-    root.minsize(820, 540)
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    target_width = min(1180, max(820, screen_width - 80))
+    target_height = min(720, max(560, screen_height - 120))
+    root.geometry(f"{target_width}x{target_height}")
+    root.minsize(min(target_width, 980), min(target_height, 640))
+
+    _configure_styles(root)
 
     state = _GuiState.from_config(config)
     _build_window(root, state)
@@ -30,8 +36,12 @@ def main(initial_config: AppConfig | None = None) -> None:
 
 
 def _build_default_config() -> AppConfig:
-    args = _build_args()
-    return build_runtime_config(args)
+    config_path = _get_default_config_path()
+    args = _build_args(config=str(config_path) if config_path.exists() else None)
+    config = build_runtime_config(args)
+    if config.config_path is None:
+        config = replace(config, config_path=config_path)
+    return config
 
 
 def _build_args(**overrides) -> argparse.Namespace:
@@ -64,9 +74,9 @@ class _GuiState:
     def __init__(self, config: AppConfig) -> None:
         current_platform = detect_platform()
         self.config_path = tk.StringVar(
-            value=str(config.config_path or (Path.cwd() / "config.json").resolve())
+            value=_display_path(config.config_path or _get_default_config_path())
         )
-        self.output_dir = tk.StringVar(value=str(config.output_dir))
+        self.output_dir = tk.StringVar(value=_display_path(config.output_dir))
         self.interval = tk.StringVar(value=str(config.interval_sec))
         self.max_zoom = tk.StringVar(value=str(config.max_zoom))
         self.earth_height_ratio = tk.StringVar(value=str(config.earth_height_ratio))
@@ -98,64 +108,117 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
 
-    outer = ttk.Frame(root)
-    outer.grid(sticky="nsew")
-    outer.columnconfigure(0, weight=1)
-    outer.rowconfigure(0, weight=1)
+    container = ttk.Frame(root, padding=16)
+    container.grid(sticky="nsew")
+    container.columnconfigure(0, weight=3)
+    container.columnconfigure(1, weight=2)
+    container.rowconfigure(1, weight=1)
 
-    canvas = tk.Canvas(outer, highlightthickness=0, borderwidth=0)
-    canvas.grid(row=0, column=0, sticky="nsew")
+    header = ttk.Frame(container)
+    header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+    header.columnconfigure(0, weight=1)
 
-    scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-    scrollbar.grid(row=0, column=1, sticky="ns")
-    canvas.configure(yscrollcommand=scrollbar.set)
+    ttk.Label(
+        header,
+        text="Himawari Dynamic Wallpaper",
+        style="PageTitle.TLabel",
+    ).grid(row=0, column=0, sticky="w")
+    ttk.Label(
+        header,
+        textvariable=state.platform_text,
+        style="HeaderMeta.TLabel",
+    ).grid(row=0, column=1, sticky="e")
+    ttk.Label(
+        header,
+        text=(
+            "Save the same config used by the Python app, run one update, "
+            "and manage startup and cleanup from one screen."
+        ),
+        style="Subtle.TLabel",
+        wraplength=760,
+        justify="left",
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
-    container = ttk.Frame(canvas, padding=16)
-    container_window = canvas.create_window((0, 0), window=container, anchor="nw")
+    settings_frame = ttk.LabelFrame(container, text="Settings", style="Section.TLabelframe")
+    settings_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+    settings_frame.columnconfigure(0, weight=1)
+    settings_frame.columnconfigure(1, weight=1)
 
-    container.bind(
-        "<Configure>",
-        lambda event: canvas.configure(scrollregion=canvas.bbox("all")),
-    )
-    canvas.bind(
-        "<Configure>",
-        lambda event: canvas.itemconfigure(container_window, width=event.width),
-    )
-    _bind_mousewheel(root, canvas)
-
-    container.columnconfigure(0, weight=1)
-
-    header = ttk.Label(
-        container,
-        text="Common settings",
-        font=("Segoe UI", 14, "bold"),
-    )
-    header.grid(row=0, column=0, sticky="w", pady=(0, 10))
-    ttk.Label(container, textvariable=state.platform_text).grid(row=0, column=0, sticky="e", pady=(0, 10))
-
-    form = ttk.Frame(container)
-    form.grid(row=1, column=0, sticky="nsew")
+    paths_frame = ttk.Frame(settings_frame, padding=(12, 10, 12, 6))
+    paths_frame.grid(row=0, column=0, columnspan=2, sticky="ew")
     for column in range(3):
-        form.columnconfigure(column, weight=1 if column == 1 else 0)
-
+        paths_frame.columnconfigure(column, weight=1 if column == 1 else 0)
     row = 0
-    row = _add_path_row(form, row, "Config file", state.config_path, _pick_config_file)
-    row = _add_path_row(form, row, "Output folder", state.output_dir, _pick_output_dir)
-    row = _add_entry_row(form, row, "Interval (sec)", state.interval)
-    row = _add_combo_row(form, row, "Max zoom", state.max_zoom, ("1", "2", "4", "8"))
-    row = _add_entry_row(form, row, "Earth height ratio", state.earth_height_ratio)
-    row = _add_entry_row(form, row, "Vertical offset ratio", state.y_offset_ratio)
-    row = _add_entry_row(form, row, "Target URL", state.target_url)
-    row = _add_entry_row(form, row, "Navigation timeout", state.navigation_timeout_ms)
-    row = _add_entry_row(form, row, "Warmup wait", state.warmup_wait_ms)
+    row = _add_path_row(paths_frame, row, "Config file", state.config_path, _pick_config_file)
+    row = _add_path_row(paths_frame, row, "Output folder", state.output_dir, _pick_output_dir)
 
-    options = ttk.Frame(form)
-    options.grid(row=row, column=0, columnspan=3, sticky="w", pady=(10, 12))
+    basic_frame = ttk.LabelFrame(settings_frame, text="Refresh + image")
+    basic_frame.grid(row=1, column=0, sticky="nsew", padx=(12, 6), pady=(0, 10))
+    basic_frame.columnconfigure(1, weight=1)
+    basic_frame.columnconfigure(3, weight=1)
+    row = 0
+    row = _add_entry_pair_row(
+        basic_frame,
+        row,
+        "Interval (sec)",
+        state.interval,
+        "Max zoom",
+        state.max_zoom,
+        second_values=("1", "2", "4", "8"),
+    )
+    row = _add_entry_pair_row(
+        basic_frame,
+        row,
+        "Earth height ratio",
+        state.earth_height_ratio,
+        "Vertical offset ratio",
+        state.y_offset_ratio,
+    )
+    ttk.Label(
+        basic_frame,
+        text="Choose how often the Python updater runs and how the Earth is framed.",
+        style="Subtle.TLabel",
+        wraplength=360,
+        justify="left",
+    ).grid(row=row, column=0, columnspan=4, sticky="w", padx=10, pady=(2, 10))
+
+    advanced_frame = ttk.LabelFrame(settings_frame, text="Network + behavior")
+    advanced_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 12), pady=(0, 10))
+    advanced_frame.columnconfigure(1, weight=1)
+    advanced_frame.columnconfigure(3, weight=1)
+    row = 0
+    row = _add_entry_pair_row(
+        advanced_frame,
+        row,
+        "Navigation timeout",
+        state.navigation_timeout_ms,
+        "Warmup wait",
+        state.warmup_wait_ms,
+    )
+    ttk.Label(advanced_frame, text="Target URL").grid(
+        row=row,
+        column=0,
+        sticky="w",
+        padx=(10, 8),
+        pady=4,
+    )
+    ttk.Entry(advanced_frame, textvariable=state.target_url).grid(
+        row=row,
+        column=1,
+        columnspan=3,
+        sticky="ew",
+        padx=(0, 10),
+        pady=4,
+    )
+    row += 1
+
+    options = ttk.Frame(advanced_frame)
+    options.grid(row=row, column=0, columnspan=4, sticky="w", padx=10, pady=(6, 10))
     ttk.Checkbutton(
         options,
         text="Apply desktop wallpaper automatically",
         variable=state.apply_wallpaper,
-    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
+    ).grid(row=0, column=0, sticky="w", padx=(0, 14))
     lock_screen_toggle = ttk.Checkbutton(
         options,
         text="Sync Windows lock screen too",
@@ -165,115 +228,243 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     if not lock_screen_supported:
         state.sync_lock_screen.set(False)
         lock_screen_toggle.state(["disabled"])
-    info_cards = ttk.Frame(container)
-    info_cards.grid(row=2, column=0, sticky="ew", pady=(4, 10))
-    info_cards.columnconfigure(0, weight=1)
-    info_cards.columnconfigure(1, weight=1)
-    info_cards.columnconfigure(2, weight=1)
 
-    _build_info_card(
-        info_cards,
-        column=0,
-        title="Startup",
-        primary=state.startup_text,
-        secondary=state.startup_hint_text,
-    )
-    _build_info_card(
-        info_cards,
-        column=1,
-        title="Latest Wallpaper",
-        primary=state.latest_wallpaper_text,
-    )
-    _build_info_card(
-        info_cards,
-        column=2,
-        title="Output Folder",
-        primary=state.output_dir,
-        secondary=state.status_text,
-    )
+    sidebar = ttk.Frame(container)
+    sidebar.grid(row=1, column=1, sticky="nsew")
+    sidebar.columnconfigure(0, weight=1)
 
-    actions = ttk.Frame(container)
-    actions.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-    actions.columnconfigure(0, weight=1)
-    actions.columnconfigure(1, weight=1)
+    status_frame = ttk.LabelFrame(sidebar, text="Current status", style="Section.TLabelframe")
+    status_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+    status_frame.columnconfigure(0, weight=1)
+    ttk.Label(
+        status_frame,
+        textvariable=state.status_text,
+        style="StatusValue.TLabel",
+        wraplength=330,
+        justify="left",
+    ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 8))
+    ttk.Label(
+        status_frame,
+        textvariable=state.latest_wallpaper_text,
+        wraplength=330,
+        justify="left",
+    ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
+    ttk.Label(
+        status_frame,
+        textvariable=state.startup_text,
+        wraplength=330,
+        justify="left",
+    ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 6))
+    ttk.Label(
+        status_frame,
+        textvariable=state.startup_hint_text,
+        style="Subtle.TLabel",
+        wraplength=330,
+        justify="left",
+    ).grid(row=3, column=0, sticky="w", padx=12, pady=(0, 10))
 
-    run_frame = ttk.LabelFrame(actions, text="Run")
-    run_frame.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-    for column in range(2):
-        run_frame.columnconfigure(column, weight=1)
-
-    ttk.Button(run_frame, text="Save config", command=lambda: _save_config(state)).grid(
-        row=0,
-        column=0,
-        sticky="ew",
-        padx=(8, 4),
-        pady=(8, 6),
-    )
-    ttk.Button(run_frame, text="Run once", command=lambda: _run_once(root, state)).grid(
-        row=0,
-        column=1,
-        sticky="ew",
-        padx=(4, 8),
-        pady=(8, 6),
-    )
+    run_frame = ttk.LabelFrame(sidebar, text="Run", style="Section.TLabelframe")
+    run_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+    run_frame.columnconfigure(0, weight=1)
+    run_frame.columnconfigure(1, weight=1)
+    ttk.Label(
+        run_frame,
+        text="The main action uses the current form values, saves config.json, then runs one Python update.",
+        style="Subtle.TLabel",
+        wraplength=330,
+        justify="left",
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 8))
+    tk.Button(
+        run_frame,
+        text="Run now",
+        command=lambda: _run_once(root, state),
+        font=("Segoe UI", 11, "bold"),
+        bg="#2563eb",
+        fg="white",
+        activebackground="#1d4ed8",
+        activeforeground="white",
+        relief="flat",
+        bd=0,
+        padx=16,
+        pady=10,
+        cursor="hand2",
+    ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+    ttk.Button(
+        run_frame,
+        text="Save config",
+        command=lambda: _save_config(state),
+        style="Action.TButton",
+    ).grid(row=2, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+    ttk.Button(
+        run_frame,
+        text="Preview latest",
+        command=lambda: _preview_latest_wallpaper(state),
+        style="Action.TButton",
+    ).grid(row=2, column=1, sticky="ew", padx=(6, 12), pady=(0, 8))
     ttk.Button(
         run_frame,
         text="Open output folder",
         command=lambda: _open_output_dir(state),
-    ).grid(row=1, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
-    ttk.Button(
-        run_frame,
-        text="Preview latest wallpaper",
-        command=lambda: _preview_latest_wallpaper(state),
-    ).grid(row=1, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
+        style="Action.TButton",
+    ).grid(row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
 
-    system_frame = ttk.LabelFrame(actions, text="Environment")
-    system_frame.grid(row=0, column=1, sticky="ew")
+    system_frame = ttk.LabelFrame(sidebar, text="Environment", style="Section.TLabelframe")
+    system_frame.grid(row=2, column=0, sticky="nsew")
     for column in range(2):
         system_frame.columnconfigure(column, weight=1)
-
     ttk.Checkbutton(
         system_frame,
         text="Enable startup at login",
         variable=state.startup_enabled,
         command=lambda: _toggle_startup(state),
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=(8, 6))
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
     ttk.Label(
         system_frame,
         text=_format_startup_toggle_details(),
-        wraplength=320,
+        style="Subtle.TLabel",
+        wraplength=330,
         justify="left",
-    ).grid(row=1, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+    ).grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
     ttk.Button(
         system_frame,
         text="Install optional browser fallback",
         command=lambda: _install_browser_fallback(root, state),
-    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 6))
+        style="Action.TButton",
+    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 6))
     ttk.Label(
         system_frame,
         textvariable=state.browser_fallback_text,
-        wraplength=320,
+        style="Subtle.TLabel",
+        wraplength=330,
         justify="left",
-    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 8))
+    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
     lock_screen_button = ttk.Button(
         system_frame,
         text="Test lock screen",
         command=lambda: _test_lock_screen(state),
+        style="Action.TButton",
     )
-    lock_screen_button.grid(row=4, column=0, sticky="ew", padx=(8, 4), pady=(0, 8))
+    lock_screen_button.grid(row=4, column=0, sticky="ew", padx=(12, 6), pady=(0, 12))
     if not lock_screen_supported:
         lock_screen_button.state(["disabled"])
     ttk.Button(
         system_frame,
         text="Cleanup / Uninstall",
         command=lambda: _cleanup_uninstall(root, state),
-    ).grid(row=4, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
+        style="Action.TButton",
+    ).grid(row=4, column=1, sticky="ew", padx=(6, 12), pady=(0, 12))
 
-    log_widget = tk.Text(container, height=8, wrap="word")
-    log_widget.grid(row=4, column=0, sticky="nsew")
+    log_frame = ttk.LabelFrame(container, text="Activity log", style="Section.TLabelframe")
+    log_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    log_frame.columnconfigure(0, weight=1)
+    log_widget = tk.Text(log_frame, height=6, wrap="word", relief="flat", borderwidth=0)
+    log_widget.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
     log_widget.insert("end", "GUI ready.\n")
     log_widget.configure(state="disabled")
     state.log_widget = log_widget
+
+
+def _configure_styles(root: tk.Tk) -> None:
+    style = ttk.Style(root)
+    style.configure("PageTitle.TLabel", font=("Segoe UI", 18, "bold"))
+    style.configure("HeaderMeta.TLabel", font=("Segoe UI", 10, "bold"))
+    style.configure("Subtle.TLabel", font=("Segoe UI", 9))
+    style.configure("StatusValue.TLabel", font=("Segoe UI", 10, "bold"))
+    style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
+    style.configure("Action.TButton", padding=(10, 7))
+
+
+def _get_default_config_path() -> Path:
+    candidates = _get_default_config_candidates()
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return candidates[0].resolve()
+
+
+def _get_default_config_candidates() -> tuple[Path, ...]:
+    candidates: list[Path] = []
+
+    bundle_root = _get_bundle_root()
+    if bundle_root is not None:
+        candidates.append(bundle_root / "config.json")
+
+    cwd_config = Path.cwd() / "config.json"
+    candidates.append(cwd_config)
+
+    project_root = _find_project_root()
+    if project_root is not None:
+        project_config = project_root / "config.json"
+        if project_config not in candidates:
+            candidates.append(project_config)
+
+    return tuple(candidates)
+
+
+def _get_bundle_root() -> Path | None:
+    executable = Path(sys.executable).resolve()
+    candidates = (executable.parent, executable.parent.parent)
+
+    for candidate in candidates:
+        if (candidate / "run_himawari.py").exists():
+            return candidate
+
+    return None
+
+
+def _get_preferred_python_executable() -> str:
+    from .autostart import _resolve_python_executable
+
+    return _resolve_python_executable(background=False)
+
+
+def _add_entry_pair_row(
+    parent: ttk.Frame,
+    row: int,
+    first_label: str,
+    first_variable: tk.StringVar,
+    second_label: str,
+    second_variable: tk.StringVar,
+    second_values: tuple[str, ...] | None = None,
+) -> int:
+    ttk.Label(parent, text=first_label).grid(
+        row=row,
+        column=0,
+        sticky="w",
+        padx=(10, 8),
+        pady=4,
+    )
+    ttk.Entry(parent, textvariable=first_variable).grid(
+        row=row,
+        column=1,
+        sticky="ew",
+        padx=(0, 12),
+        pady=4,
+    )
+    ttk.Label(parent, text=second_label).grid(
+        row=row,
+        column=2,
+        sticky="w",
+        padx=(0, 8),
+        pady=4,
+    )
+    if second_values is None:
+        field = ttk.Entry(parent, textvariable=second_variable)
+    else:
+        field = ttk.Combobox(
+            parent,
+            textvariable=second_variable,
+            values=second_values,
+            state="readonly",
+        )
+    field.grid(
+        row=row,
+        column=3,
+        sticky="ew",
+        padx=(0, 10),
+        pady=4,
+    )
+    return row + 1
 
 
 def _add_path_row(
@@ -357,7 +548,7 @@ def _build_info_card(
 def _pick_output_dir(variable: tk.StringVar) -> None:
     selected = filedialog.askdirectory(initialdir=variable.get() or str(Path.cwd()))
     if selected:
-        variable.set(selected)
+        variable.set(_display_path(selected))
 
 
 def _pick_config_file(variable: tk.StringVar) -> None:
@@ -368,7 +559,13 @@ def _pick_config_file(variable: tk.StringVar) -> None:
         initialdir=str(Path(variable.get()).parent if variable.get() else Path.cwd()),
     )
     if selected:
-        variable.set(selected)
+        variable.set(_display_path(selected))
+
+
+def _display_path(value: str | Path | None) -> str:
+    if value is None:
+        return ""
+    return os.path.normpath(str(value))
 
 
 def _config_from_state(state: _GuiState) -> tuple[AppConfig, Path]:
@@ -497,7 +694,12 @@ def _install_browser_fallback(root: tk.Tk, state: _GuiState) -> None:
         )
         return
 
-    python_executable = sys.executable
+    try:
+        python_executable = _get_preferred_python_executable()
+    except Exception as exc:
+        _show_error(state, "Browser fallback install failed", str(exc))
+        return
+
     project_root = _find_project_root()
     steps = _build_browser_fallback_install_steps(python_executable, project_root)
 

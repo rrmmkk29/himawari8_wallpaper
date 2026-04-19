@@ -1,6 +1,7 @@
 import os
 import plistlib
 import shlex
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,6 +11,14 @@ from .platforms import LINUX, MACOS, WINDOWS, detect_platform
 STARTUP_BAT_NAME = "HimawariWallpaperAuto.bat"
 LAUNCH_AGENT_NAME = "com.himawari.dynamic-wallpaper.plist"
 AUTOSTART_DESKTOP_NAME = "himawari-dynamic-wallpaper.desktop"
+PYTHON_EXECUTABLE_NAMES = {
+    "python",
+    "python.exe",
+    "pythonw",
+    "pythonw.exe",
+    "py",
+    "py.exe",
+}
 
 
 def install_startup(
@@ -21,6 +30,8 @@ def install_startup(
     apply_wallpaper: bool,
     sync_lock_screen: bool,
     config_path: Path | None = None,
+    python_executable: Path | None = None,
+    launcher_script: Path | None = None,
 ) -> Path:
     current_platform = detect_platform()
     command = _build_command(
@@ -33,6 +44,8 @@ def install_startup(
         sync_lock_screen=sync_lock_screen,
         config_path=config_path,
         background=current_platform == WINDOWS,
+        python_executable=python_executable,
+        launcher_script=launcher_script,
     )
 
     if current_platform == WINDOWS:
@@ -81,24 +94,36 @@ def _build_command(
     sync_lock_screen: bool,
     config_path: Path | None,
     background: bool,
+    python_executable: Path | None = None,
+    launcher_script: Path | None = None,
 ) -> list[str]:
-    executable = _get_python_background_executable() if background else sys.executable
-    command = [
-        executable,
-        "-m",
-        "himawari_wallpaper",
-        "--run",
-        "--interval",
-        str(interval_sec),
-        "--out",
-        str(out_dir),
-        "--earth-height-ratio",
-        str(earth_height_ratio),
-        "--y-offset-ratio",
-        str(y_offset_ratio),
-        "--max-zoom",
-        str(max_zoom),
-    ]
+    executable = _resolve_python_executable(
+        background=background,
+        python_executable=python_executable,
+    )
+    command = [executable]
+
+    effective_launcher = launcher_script or _get_bundled_launcher_script()
+    if effective_launcher is not None:
+        command.append(str(effective_launcher))
+    else:
+        command.extend(["-m", "himawari_wallpaper"])
+
+    command.extend(
+        [
+            "--run",
+            "--interval",
+            str(interval_sec),
+            "--out",
+            str(out_dir),
+            "--earth-height-ratio",
+            str(earth_height_ratio),
+            "--y-offset-ratio",
+            str(y_offset_ratio),
+            "--max-zoom",
+            str(max_zoom),
+        ]
+    )
     if not apply_wallpaper:
         command.append("--download-only")
     if sync_lock_screen:
@@ -181,3 +206,99 @@ def _get_python_background_executable() -> str:
     if pythonw.exists():
         return str(pythonw)
     return str(executable)
+
+
+def _resolve_python_executable(
+    background: bool,
+    python_executable: Path | None = None,
+) -> str:
+    if python_executable is not None:
+        return str(python_executable)
+
+    bundled_runtime = _get_bundled_runtime_dir()
+    if bundled_runtime is not None:
+        if background:
+            bundled_pythonw = bundled_runtime / "pythonw.exe"
+            if bundled_pythonw.exists():
+                return str(bundled_pythonw)
+        bundled_python = bundled_runtime / "python.exe"
+        if bundled_python.exists():
+            return str(bundled_python)
+
+    system_python = _find_system_python_executable(background=background)
+    if system_python is not None:
+        return system_python
+
+    fallback = _get_python_background_executable() if background else str(sys.executable)
+    if _is_usable_python_executable(fallback):
+        return fallback
+
+    raise RuntimeError(
+        "No usable Python interpreter was found. Install Python or launch the app from an "
+        "activated conda environment before enabling startup or running bundled scripts."
+    )
+
+
+def _get_bundled_runtime_dir() -> Path | None:
+    bundle_root = _get_bundle_root()
+    if bundle_root is None:
+        return None
+
+    runtime_dir = bundle_root / "runtime"
+    if runtime_dir.exists():
+        return runtime_dir
+    return None
+
+
+def _get_bundled_launcher_script() -> Path | None:
+    bundle_root = _get_bundle_root()
+    if bundle_root is None:
+        return None
+
+    launcher_script = bundle_root / "run_himawari.py"
+    if launcher_script.exists():
+        return launcher_script
+    return None
+
+
+def _get_bundle_root() -> Path | None:
+    executable = Path(sys.executable).resolve()
+    candidates = (executable.parent, executable.parent.parent)
+
+    for candidate in candidates:
+        launcher_script = candidate / "run_himawari.py"
+        if launcher_script.exists():
+            return candidate
+
+    return None
+
+
+def _find_system_python_executable(background: bool) -> str | None:
+    command_names = (
+        ("pythonw.exe", "python.exe", "pythonw", "python", "py.exe", "py")
+        if background
+        else ("py.exe", "py", "python.exe", "python")
+    )
+
+    for command_name in command_names:
+        resolved = shutil.which(command_name)
+        if resolved and _is_usable_python_executable(resolved):
+            return resolved
+
+    return None
+
+
+def _is_usable_python_executable(value: str | os.PathLike[str]) -> bool:
+    path = Path(value)
+    if path.name.lower() not in PYTHON_EXECUTABLE_NAMES:
+        return False
+    if _is_windowsapps_alias(path):
+        return False
+    if path.is_absolute() and not path.exists():
+        return False
+    return True
+
+
+def _is_windowsapps_alias(path: str | os.PathLike[str]) -> bool:
+    lowered_parts = {part.lower() for part in Path(path).parts}
+    return "windowsapps" in lowered_parts

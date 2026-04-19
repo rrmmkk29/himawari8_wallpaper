@@ -50,6 +50,8 @@ def test_create_bundle_archive_packs_exe_and_support_files(tmp_path: Path) -> No
     original_root = module.ROOT
     fake_root = tmp_path / "repo"
     fake_root.mkdir()
+    (fake_root / "src" / "himawari_wallpaper").mkdir(parents=True)
+    (fake_root / "src" / "himawari_wallpaper" / "__init__.py").write_text("", encoding="utf-8")
     for relative, _archive_name in module.SUPPORT_FILES:
         (fake_root / relative).write_text(relative.name, encoding="utf-8")
 
@@ -59,16 +61,39 @@ def test_create_bundle_archive_packs_exe_and_support_files(tmp_path: Path) -> No
     finally:
         module.ROOT = original_root
 
-    assert added == 1 + len(module.SUPPORT_FILES) + len(module.GENERATED_BUNDLE_FILES)
+    assert added >= 1 + len(module.SUPPORT_FILES) + len(module.GENERATED_BUNDLE_FILES)
     with zipfile.ZipFile(output_path) as archive:
         names = set(archive.namelist())
 
     archive_root = output_path.stem
     assert f"{archive_root}/{exe_path.name}" in names
+    assert f"{archive_root}/src/himawari_wallpaper/__init__.py" in names
     for relative, archive_name in module.SUPPORT_FILES:
         assert f"{archive_root}/{archive_name}" in names
     for archive_name in module.GENERATED_BUNDLE_FILES:
         assert f"{archive_root}/{archive_name}" in names
+
+
+def test_build_python_launcher_script_imports_cli_main() -> None:
+    module = load_build_windows_bundle_module()
+
+    content = module.build_python_launcher_script()
+
+    assert 'SOURCE_DIR = ROOT / "src"' in content
+    assert "from himawari_wallpaper.cli import main" in content
+
+
+def test_build_run_bat_contents_calls_python_runtime() -> None:
+    module = load_build_windows_bundle_module()
+
+    content = module.build_run_bat_contents(run_once=False)
+
+    assert "call :resolve_python PYTHON_CMD" in content
+    assert "\"%PYTHON_CMD%\" \"%SCRIPT_DIR%run_himawari.py\"" in content
+    assert "run_himawari.py" in content
+    assert "--run --config" in content
+    assert "py.exe py python.exe python" in content
+    assert "\\WindowsApps\\" in content
 
 
 def test_build_windows_file_version_pads_to_four_parts() -> None:

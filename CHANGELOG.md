@@ -3,6 +3,11 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.4
+- Reworked the desktop GUI into a more compact two-column layout with a clearer primary `Run now` action.
+- Added bundled-config auto-loading so the Windows GUI reopens with the saved `config.json` instead of resetting to defaults.
+- Changed the Windows bundle layout so the GUI is only a settings helper while packaged Python source files, launcher scripts, and `.bat` entrypoints run the real updater logic.
+
 ## 0.2.3
 - Added vertical scrolling support to the desktop GUI so smaller windows can still access the full settings form.
 - Limited generated `lockscreen_*.png` files to the latest 24 items, matching the wallpaper retention model more closely.

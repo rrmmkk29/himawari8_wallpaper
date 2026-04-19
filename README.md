@@ -43,18 +43,6 @@ python scripts/bootstrap.py --manager conda --conda-env-name himawari-wallpaper
 conda activate himawari-wallpaper
 ```
 
-Install development dependencies too:
-
-```bash
-python scripts/bootstrap.py --dev
-```
-
-Run a repository self-check before pushing:
-
-```bash
-python scripts/repo_check.py
-```
-
 If you prefer file-based runtime configuration instead of long CLI commands:
 
 ```bash
@@ -118,12 +106,6 @@ Preferred manual installation with conda:
 ```bash
 conda env create -f environment.yml
 conda activate himawari-wallpaper
-```
-
-If you want development dependencies too:
-
-```bash
-python -m pip install -e ".[dev]"
 ```
 
 If you do not want to use conda, venv remains available as a fallback:
@@ -272,11 +254,15 @@ The GUI can save common settings, run one update, install or remove startup,
 open the output folder, preview the latest generated wallpaper, show current startup status,
 show the latest generated wallpaper file, run selectable local cleanup / uninstall actions,
 install the optional browser fallback into the current environment, and test Windows lock-screen sync.
-The action area is grouped into `Run` and
-`Environment` sections to keep everyday actions separated from system-level tasks.
+The layout is now compacted into a two-column screen with a more prominent `Run now`
+primary action so common tasks fit on a normal desktop window more easily.
+The action area is grouped into `Run` and `Environment` sections to keep everyday
+actions separated from system-level tasks.
 Startup is controlled with an `Enable startup at login` toggle in the GUI.
 Windows-only lock-screen controls are disabled automatically on macOS and Linux.
 The GUI also shows the detected current platform near the top of the window.
+When the Windows release bundle is used, the GUI automatically reloads the bundled
+`config.json` on the next launch instead of resetting to built-in defaults.
 When the project root is available, the browser fallback button installs `.[browser]`;
 otherwise it falls back to a direct Playwright package install for ordinary users.
 
@@ -309,8 +295,6 @@ If none of these are available, image fetching and composition can still work, b
 
 WSL validation summary:
 
-- `python3 -m pip install --user -e '.[dev]'` works
-- `python3 scripts/repo_check.py` passes
 - A real `--once --download-only` smoke test generated `last_source_meta.json`, the original PNG, and the wallpaper PNG
 - The HTTP-based `latest.json` path successfully resolved the latest `D531106` timestamp in WSL
 - Optional Playwright fallback can still be installed later when browser-level discovery is needed
@@ -345,42 +329,20 @@ The installed CLI is still the preferred way to run it:
 himawari-wallpaper --once
 ```
 
-## Tests
+## Windows Release Bundle
 
-```bash
-pytest -q
-```
+The Windows release bundle includes:
 
-## Release
+- `himawari-dynamic-wallpaper-gui.exe`
+- `src/` with the Python application code
+- `run_himawari.py` as the Python launcher script
+- `Run Himawari Wallpaper.bat` for continuous runs
+- `Run Himawari Once.bat` for a one-shot refresh
+- `Open Himawari Settings.bat` for reopening the GUI
+- `config.example.json` and a ready-to-edit `config.json`
 
-Local pre-release checks:
+The GUI is intended as a settings helper. The actual updater and startup entry run
+through the packaged Python source files and launcher scripts, not through the GUI
+executable itself. The `.bat` launchers call `python`.
 
-```bash
-python scripts/repo_check.py
-python scripts/pack_release.py --label local
-```
-
-Local Windows GUI bundle:
-
-```bash
-python -m pip install -e ".[release]"
-python scripts/build_windows_bundle.py --label local
-```
-
-That bundle now includes a ready-to-edit `config.json` copy and injects Windows version metadata into the executable.
-
-GitHub automated releases:
-
-- Pushing a tag like `v0.2.3` triggers the release packaging workflow
-- The release workflow now publishes both a source zip and a Windows GUI bundle
-- You can also run the `Release Package` workflow manually to build release artifacts only
-
-See [`docs/RELEASING.md`](docs/RELEASING.md) for the detailed release process.
 For Windows executable details, see [`docs/BUILD_WINDOWS_EXE.md`](docs/BUILD_WINDOWS_EXE.md).
-
-## Before Uploading To GitHub
-
-- Run `himawari-wallpaper --once` at least once
-- Run `pytest -q`
-- Make sure logs, caches, and generated outputs are not committed
-- Follow [`docs/GITHUB_UPLOAD_STEPS.md`](docs/GITHUB_UPLOAD_STEPS.md)

@@ -133,6 +133,46 @@ def test_build_browser_fallback_install_steps_falls_back_to_direct_package() -> 
     ]
 
 
+def test_get_default_config_path_prefers_bundle_config(monkeypatch, tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir(parents=True)
+    launcher_script = bundle_root / "run_himawari.py"
+    launcher_script.write_text("print('launcher')\n", encoding="utf-8")
+    config_path = bundle_root / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
+    gui_exe = bundle_root / "himawari-dynamic-wallpaper-gui.exe"
+    gui_exe.write_bytes(b"exe")
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+
+    monkeypatch.setattr(gui.sys, "executable", str(gui_exe))
+    monkeypatch.chdir(other_dir)
+
+    result = gui._get_default_config_path()
+
+    assert result == config_path.resolve()
+
+
+def test_get_preferred_python_executable_uses_bundled_runtime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(gui, "_find_project_root", lambda start_paths=None: None)
+    monkeypatch.setattr(gui, "_get_bundle_root", lambda: None)
+    monkeypatch.setattr(
+        "himawari_wallpaper.autostart._find_system_python_executable",
+        lambda background: str(tmp_path / "python.exe"),
+    )
+
+    assert gui._get_preferred_python_executable() == str(tmp_path / "python.exe")
+
+
+def test_display_path_uses_normpath(monkeypatch) -> None:
+    monkeypatch.setattr(gui.os.path, "normpath", lambda value: value.replace("/", "\\"))
+
+    assert gui._display_path("D:/demo/config.json") == "D:\\demo\\config.json"
+
+
 def test_format_subprocess_error_uses_last_output_line() -> None:
     error = gui.subprocess.CalledProcessError(
         1,

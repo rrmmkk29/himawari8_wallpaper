@@ -43,18 +43,6 @@ python scripts/bootstrap.py --manager conda --conda-env-name himawari-wallpaper
 conda activate himawari-wallpaper
 ```
 
-开发依赖一起安装：
-
-```bash
-python scripts/bootstrap.py --dev
-```
-
-上传 GitHub 前可以一条命令自检：
-
-```bash
-python scripts/repo_check.py
-```
-
 如果你更希望把运行参数放到文件里，而不是记 CLI 参数：
 
 ```bash
@@ -118,12 +106,6 @@ sudo apt install python3-venv
 ```bash
 conda env create -f environment.yml
 conda activate himawari-wallpaper
-```
-
-如果你还想加开发依赖：
-
-```bash
-python -m pip install -e ".[dev]"
 ```
 
 如果你不想用 conda，`venv` 仍然保留为备选：
@@ -269,11 +251,14 @@ himawari-wallpaper-gui
 GUI 现在可以保存常用设置、单次运行、安装或移除开机自启、打开输出目录、
 预览最新生成的壁纸、显示当前自启状态、显示最近一次生成的壁纸文件、
 执行可选项的本地清理/卸载、把可选浏览器兜底直接安装到当前环境里，
-并在 Windows 下测试锁屏同步。按钮区现在分成 `Run` 和 `Environment`
-两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
+并在 Windows 下测试锁屏同步。界面现在改成更紧凑的双栏布局，
+并把 `Run now` 做成更明显的主按钮，尽量让常见操作在普通桌面窗口里一屏可见。
+按钮区现在分成 `Run` 和 `Environment` 两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
 `Enable startup at login` 开关控制，
 Windows 专属的锁屏相关控件会在 macOS / Linux 上自动禁用，
 GUI 顶部还会显示当前识别到的平台。
+如果你使用 Windows 发布包，GUI 下次打开时会自动读取同目录的 `config.json`，
+而不是回退成内置默认设置。
 如果 GUI 能定位到项目根目录，浏览器兜底按钮会安装 `.[browser]`；
 如果定位不到，则自动退回为直接安装 Playwright，方便普通用户点击使用。
 
@@ -306,8 +291,6 @@ Linux 壁纸设置会按顺序尝试以下后端：
 
 WSL 测试结论：
 
-- `python3 -m pip install --user -e '.[dev]'` 可完成安装
-- `python3 scripts/repo_check.py` 可完整通过
 - 可使用 `--once --download-only` 跑真实抓图 smoke test 而不触发桌面壁纸设置
 - 真实 smoke test 已成功生成 `last_source_meta.json`、原图 PNG 和壁纸 PNG
 - 纯 HTTP 的 `latest.json` 路径已实测可在 WSL 中拿到最新 D531106 时间并完成下载
@@ -343,41 +326,20 @@ python src/himawari_wallpaper_webzoom.py --once
 himawari-wallpaper --once
 ```
 
-## 测试
+## Windows 发布包
 
-```bash
-pytest -q
-```
+Windows 发布包会包含：
 
-## 发布
+- `himawari-dynamic-wallpaper-gui.exe`
+- `src/` Python 程序源码
+- `run_himawari.py` Python 启动脚本
+- `Run Himawari Wallpaper.bat` 持续运行入口
+- `Run Himawari Once.bat` 单次刷新入口
+- `Open Himawari Settings.bat` 重新打开 GUI 的入口
+- `config.example.json` 和可直接编辑的 `config.json`
 
-本地发布前检查：
+GUI 是纯粹的设置辅助界面；真正的更新逻辑和开机自启都会通过发布包内
+附带的 Python 源码和启动脚本来运行，而不是直接调用 GUI exe。发布包中的
+`.bat` 启动脚本会调用系统里的 `python`。
 
-```bash
-python scripts/repo_check.py
-python scripts/pack_release.py --label local
-```
-
-本地构建 Windows GUI 可执行发布包：
-
-```bash
-python -m pip install -e ".[release]"
-python scripts/build_windows_bundle.py --label local
-```
-
-这个发布包现在会额外附带一个可直接编辑的 `config.json`，并把 Windows 版本信息注入到 `.exe` 文件里。
-
-GitHub 自动发布：
-
-- 推送 `v0.2.3` 这种 tag 后，GitHub Actions 会自动构建源码 zip 和 Windows GUI 发布包
-- 也可以手动触发 `Release Package` 工作流，只生成打包产物
-
-详细步骤见 [`docs/RELEASING.md`](docs/RELEASING.md)。
 Windows 可执行包的细节见 [`docs/BUILD_WINDOWS_EXE.md`](docs/BUILD_WINDOWS_EXE.md)。
-
-## 上传 GitHub 前建议
-
-- 先运行一次 `himawari-wallpaper --once`
-- 再运行 `pytest -q`
-- 检查输出目录、日志和缓存没有被误提交
-- 按 [`docs/GITHUB_UPLOAD_STEPS.md`](docs/GITHUB_UPLOAD_STEPS.md) 执行仓库初始化

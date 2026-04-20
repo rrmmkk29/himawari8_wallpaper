@@ -23,10 +23,10 @@ def main(initial_config: AppConfig | None = None) -> None:
     root.title("Himawari Wallpaper Settings")
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
-    target_width = min(1180, max(820, screen_width - 80))
-    target_height = min(720, max(560, screen_height - 120))
+    target_width = min(1160, max(820, screen_width - 96))
+    target_height = min(700, max(560, screen_height - 96))
     root.geometry(f"{target_width}x{target_height}")
-    root.minsize(min(target_width, 980), min(target_height, 640))
+    root.minsize(min(target_width, 940), min(target_height, 620))
 
     _configure_styles(root)
 
@@ -108,14 +108,14 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
 
-    container = ttk.Frame(root, padding=16)
+    container = ttk.Frame(root, padding=12)
     container.grid(sticky="nsew")
     container.columnconfigure(0, weight=3)
     container.columnconfigure(1, weight=2)
     container.rowconfigure(1, weight=1)
 
     header = ttk.Frame(container)
-    header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 14))
+    header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
     header.columnconfigure(0, weight=1)
 
     ttk.Label(
@@ -128,39 +128,28 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         textvariable=state.platform_text,
         style="HeaderMeta.TLabel",
     ).grid(row=0, column=1, sticky="e")
-    ttk.Label(
-        header,
-        text=(
-            "Save the same config used by the Python app, run one update, "
-            "and manage startup and cleanup from one screen."
-        ),
-        style="Subtle.TLabel",
-        wraplength=760,
-        justify="left",
-    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     settings_frame = ttk.LabelFrame(container, text="Settings", style="Section.TLabelframe")
-    settings_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+    settings_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
     settings_frame.columnconfigure(0, weight=1)
     settings_frame.columnconfigure(1, weight=1)
 
-    paths_frame = ttk.Frame(settings_frame, padding=(12, 10, 12, 6))
+    paths_frame = ttk.Frame(settings_frame, padding=(8, 6, 8, 2))
     paths_frame.grid(row=0, column=0, columnspan=2, sticky="ew")
-    for column in range(3):
-        paths_frame.columnconfigure(column, weight=1 if column == 1 else 0)
-    row = 0
-    row = _add_path_row(paths_frame, row, "Config file", state.config_path, _pick_config_file)
-    row = _add_path_row(paths_frame, row, "Output folder", state.output_dir, _pick_output_dir)
+    for column, weight in ((0, 0), (1, 1), (2, 0), (3, 0), (4, 1), (5, 0)):
+        paths_frame.columnconfigure(column, weight=weight)
+    _add_inline_path_field(paths_frame, 0, "Config", state.config_path, _pick_config_file)
+    _add_inline_path_field(paths_frame, 3, "Output", state.output_dir, _pick_output_dir)
 
     basic_frame = ttk.LabelFrame(settings_frame, text="Refresh + image")
-    basic_frame.grid(row=1, column=0, sticky="nsew", padx=(12, 6), pady=(0, 10))
+    basic_frame.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(0, 6))
     basic_frame.columnconfigure(1, weight=1)
     basic_frame.columnconfigure(3, weight=1)
     row = 0
     row = _add_entry_pair_row(
         basic_frame,
         row,
-        "Interval (sec)",
+        "Interval",
         state.interval,
         "Max zoom",
         state.max_zoom,
@@ -169,59 +158,54 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     row = _add_entry_pair_row(
         basic_frame,
         row,
-        "Earth height ratio",
+        "Earth ratio",
         state.earth_height_ratio,
-        "Vertical offset ratio",
+        "Y offset",
         state.y_offset_ratio,
     )
-    ttk.Label(
-        basic_frame,
-        text="Choose how often the Python updater runs and how the Earth is framed.",
-        style="Subtle.TLabel",
-        wraplength=360,
-        justify="left",
-    ).grid(row=row, column=0, columnspan=4, sticky="w", padx=10, pady=(2, 10))
 
     advanced_frame = ttk.LabelFrame(settings_frame, text="Network + behavior")
-    advanced_frame.grid(row=1, column=1, sticky="nsew", padx=(6, 12), pady=(0, 10))
+    advanced_frame.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=(0, 6))
     advanced_frame.columnconfigure(1, weight=1)
     advanced_frame.columnconfigure(3, weight=1)
     row = 0
     row = _add_entry_pair_row(
         advanced_frame,
         row,
-        "Navigation timeout",
+        "Nav timeout",
         state.navigation_timeout_ms,
         "Warmup wait",
         state.warmup_wait_ms,
     )
-    ttk.Label(advanced_frame, text="Target URL").grid(
+    ttk.Label(advanced_frame, text="URL").grid(
         row=row,
         column=0,
         sticky="w",
-        padx=(10, 8),
+        padx=(8, 8),
         pady=4,
     )
-    ttk.Entry(advanced_frame, textvariable=state.target_url).grid(
+    url_entry = ttk.Entry(advanced_frame, textvariable=state.target_url)
+    url_entry.grid(
         row=row,
         column=1,
         columnspan=3,
         sticky="ew",
-        padx=(0, 10),
+        padx=(0, 8),
         pady=4,
     )
+    _bind_tooltip(url_entry, state.target_url)
     row += 1
 
     options = ttk.Frame(advanced_frame)
-    options.grid(row=row, column=0, columnspan=4, sticky="w", padx=10, pady=(6, 10))
+    options.grid(row=row, column=0, columnspan=4, sticky="w", padx=8, pady=(2, 6))
     ttk.Checkbutton(
         options,
-        text="Apply desktop wallpaper automatically",
+        text="Apply wallpaper",
         variable=state.apply_wallpaper,
-    ).grid(row=0, column=0, sticky="w", padx=(0, 14))
+    ).grid(row=0, column=0, sticky="w", padx=(0, 12))
     lock_screen_toggle = ttk.Checkbutton(
         options,
-        text="Sync Windows lock screen too",
+        text="Sync lock screen",
         variable=state.sync_lock_screen,
     )
     lock_screen_toggle.grid(row=0, column=1, sticky="w")
@@ -234,46 +218,38 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
     sidebar.columnconfigure(0, weight=1)
 
     status_frame = ttk.LabelFrame(sidebar, text="Current status", style="Section.TLabelframe")
-    status_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+    status_frame.grid(row=0, column=0, sticky="ew", pady=(0, 6))
     status_frame.columnconfigure(0, weight=1)
-    ttk.Label(
+    status_label = ttk.Label(
         status_frame,
         textvariable=state.status_text,
         style="StatusValue.TLabel",
-        wraplength=330,
+        wraplength=290,
         justify="left",
-    ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 8))
-    ttk.Label(
+    )
+    status_label.grid(row=0, column=0, sticky="w", padx=10, pady=(8, 6))
+    _bind_tooltip(status_label, state.status_text)
+    latest_label = ttk.Label(
         status_frame,
         textvariable=state.latest_wallpaper_text,
-        wraplength=330,
+        wraplength=290,
         justify="left",
-    ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 6))
-    ttk.Label(
+    )
+    latest_label.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 4))
+    _bind_tooltip(latest_label, state.latest_wallpaper_text)
+    startup_label = ttk.Label(
         status_frame,
         textvariable=state.startup_text,
-        wraplength=330,
+        wraplength=290,
         justify="left",
-    ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 6))
-    ttk.Label(
-        status_frame,
-        textvariable=state.startup_hint_text,
-        style="Subtle.TLabel",
-        wraplength=330,
-        justify="left",
-    ).grid(row=3, column=0, sticky="w", padx=12, pady=(0, 10))
+    )
+    startup_label.grid(row=2, column=0, sticky="w", padx=10, pady=(0, 8))
+    _bind_tooltip(startup_label, state.startup_text)
 
     run_frame = ttk.LabelFrame(sidebar, text="Run", style="Section.TLabelframe")
-    run_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+    run_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
     run_frame.columnconfigure(0, weight=1)
     run_frame.columnconfigure(1, weight=1)
-    ttk.Label(
-        run_frame,
-        text="The main action uses the current form values, saves config.json, then runs one Python update.",
-        style="Subtle.TLabel",
-        wraplength=330,
-        justify="left",
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 8))
     tk.Button(
         run_frame,
         text="Run now",
@@ -286,27 +262,27 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         relief="flat",
         bd=0,
         padx=16,
-        pady=10,
+        pady=8,
         cursor="hand2",
-    ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
+    ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(8, 6))
     ttk.Button(
         run_frame,
         text="Save config",
         command=lambda: _save_config(state),
         style="Action.TButton",
-    ).grid(row=2, column=0, sticky="ew", padx=(12, 6), pady=(0, 8))
+    ).grid(row=1, column=0, sticky="ew", padx=(10, 5), pady=(0, 6))
     ttk.Button(
         run_frame,
         text="Preview latest",
         command=lambda: _preview_latest_wallpaper(state),
         style="Action.TButton",
-    ).grid(row=2, column=1, sticky="ew", padx=(6, 12), pady=(0, 8))
+    ).grid(row=1, column=1, sticky="ew", padx=(5, 10), pady=(0, 6))
     ttk.Button(
         run_frame,
-        text="Open output folder",
+        text="Open output",
         command=lambda: _open_output_dir(state),
         style="Action.TButton",
-    ).grid(row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 12))
+    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
 
     system_frame = ttk.LabelFrame(sidebar, text="Environment", style="Section.TLabelframe")
     system_frame.grid(row=2, column=0, sticky="nsew")
@@ -317,48 +293,52 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
         text="Enable startup at login",
         variable=state.startup_enabled,
         command=lambda: _toggle_startup(state),
-    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
-    ttk.Label(
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(8, 3))
+    system_details_label = ttk.Label(
         system_frame,
         text=_format_startup_toggle_details(),
         style="Subtle.TLabel",
-        wraplength=330,
+        wraplength=290,
         justify="left",
-    ).grid(row=1, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+    )
+    system_details_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+    _bind_static_tooltip(system_details_label, _format_startup_toggle_details())
     ttk.Button(
         system_frame,
-        text="Install optional browser fallback",
+        text="Install browser fallback",
         command=lambda: _install_browser_fallback(root, state),
         style="Action.TButton",
-    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 6))
-    ttk.Label(
+    ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 3))
+    browser_label = ttk.Label(
         system_frame,
         textvariable=state.browser_fallback_text,
         style="Subtle.TLabel",
-        wraplength=330,
+        wraplength=290,
         justify="left",
-    ).grid(row=3, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+    )
+    browser_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 4))
+    _bind_tooltip(browser_label, state.browser_fallback_text)
     lock_screen_button = ttk.Button(
         system_frame,
-        text="Test lock screen",
+        text="Test lock",
         command=lambda: _test_lock_screen(state),
         style="Action.TButton",
     )
-    lock_screen_button.grid(row=4, column=0, sticky="ew", padx=(12, 6), pady=(0, 12))
+    lock_screen_button.grid(row=4, column=0, sticky="ew", padx=(10, 5), pady=(0, 8))
     if not lock_screen_supported:
         lock_screen_button.state(["disabled"])
     ttk.Button(
         system_frame,
-        text="Cleanup / Uninstall",
+        text="Cleanup",
         command=lambda: _cleanup_uninstall(root, state),
         style="Action.TButton",
-    ).grid(row=4, column=1, sticky="ew", padx=(6, 12), pady=(0, 12))
+    ).grid(row=4, column=1, sticky="ew", padx=(5, 10), pady=(0, 8))
 
     log_frame = ttk.LabelFrame(container, text="Activity log", style="Section.TLabelframe")
-    log_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    log_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
     log_frame.columnconfigure(0, weight=1)
-    log_widget = tk.Text(log_frame, height=6, wrap="word", relief="flat", borderwidth=0)
-    log_widget.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+    log_widget = tk.Text(log_frame, height=3, wrap="word", relief="flat", borderwidth=0)
+    log_widget.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
     log_widget.insert("end", "GUI ready.\n")
     log_widget.configure(state="disabled")
     state.log_widget = log_widget
@@ -366,12 +346,14 @@ def _build_window(root: tk.Tk, state: _GuiState) -> None:
 
 def _configure_styles(root: tk.Tk) -> None:
     style = ttk.Style(root)
-    style.configure("PageTitle.TLabel", font=("Segoe UI", 18, "bold"))
+    style.configure("PageTitle.TLabel", font=("Segoe UI", 17, "bold"))
     style.configure("HeaderMeta.TLabel", font=("Segoe UI", 10, "bold"))
-    style.configure("Subtle.TLabel", font=("Segoe UI", 9))
-    style.configure("StatusValue.TLabel", font=("Segoe UI", 10, "bold"))
+    style.configure("Subtle.TLabel", font=("Segoe UI", 8))
+    style.configure("StatusValue.TLabel", font=("Segoe UI", 9, "bold"))
     style.configure("Section.TLabelframe.Label", font=("Segoe UI", 10, "bold"))
-    style.configure("Action.TButton", padding=(10, 7))
+    style.configure("Action.TButton", padding=(8, 5))
+    style.configure("PathValue.TLabel", padding=(8, 5), relief="solid", borderwidth=1)
+    style.configure("Tooltip.TLabel", background="#fffbe6", relief="solid", borderwidth=1, padding=6)
 
 
 def _get_default_config_path() -> Path:
@@ -402,11 +384,13 @@ def _get_default_config_candidates() -> tuple[Path, ...]:
 
 
 def _get_bundle_root() -> Path | None:
+    from .autostart import BUNDLE_MARKERS
+
     executable = Path(sys.executable).resolve()
     candidates = (executable.parent, executable.parent.parent)
 
     for candidate in candidates:
-        if (candidate / "run_himawari.py").exists():
+        if any((candidate / marker).exists() for marker in BUNDLE_MARKERS):
             return candidate
 
     return None
@@ -475,7 +459,11 @@ def _add_path_row(
     picker,
 ) -> int:
     ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=4, padx=(0, 10))
-    ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=4)
+    preview_text = tk.StringVar()
+    _bind_truncated_text(variable, preview_text, max_length=54)
+    value_label = ttk.Label(parent, textvariable=preview_text, style="PathValue.TLabel", anchor="w")
+    value_label.grid(row=row, column=1, sticky="ew", pady=4)
+    _bind_tooltip(value_label, variable)
     ttk.Button(parent, text="Browse", command=lambda: picker(variable)).grid(
         row=row,
         column=2,
@@ -484,6 +472,34 @@ def _add_path_row(
         padx=(10, 0),
     )
     return row + 1
+
+
+def _add_inline_path_field(
+    parent: ttk.Frame,
+    column_offset: int,
+    label: str,
+    variable: tk.StringVar,
+    picker,
+) -> None:
+    ttk.Label(parent, text=label).grid(
+        row=0,
+        column=column_offset,
+        sticky="w",
+        pady=4,
+        padx=(0, 8),
+    )
+    preview_text = tk.StringVar()
+    _bind_truncated_text(variable, preview_text, max_length=28)
+    value_label = ttk.Label(parent, textvariable=preview_text, style="PathValue.TLabel", anchor="w")
+    value_label.grid(row=0, column=column_offset + 1, sticky="ew", pady=4)
+    _bind_tooltip(value_label, variable)
+    ttk.Button(parent, text="...", width=3, command=lambda: picker(variable)).grid(
+        row=0,
+        column=column_offset + 2,
+        sticky="e",
+        pady=4,
+        padx=(8, 0),
+    )
 
 
 def _add_entry_row(parent: ttk.Frame, row: int, label: str, variable: tk.StringVar) -> int:
@@ -568,6 +584,70 @@ def _display_path(value: str | Path | None) -> str:
     return os.path.normpath(str(value))
 
 
+def _truncate_middle(value: str, max_length: int = 54) -> str:
+    if len(value) <= max_length:
+        return value
+    if max_length <= 3:
+        return value[:max_length]
+    head = (max_length - 3) // 2
+    tail = max_length - 3 - head
+    return f"{value[:head]}...{value[-tail:]}"
+
+
+def _bind_truncated_text(source_var: tk.StringVar, target_var: tk.StringVar, max_length: int) -> None:
+    def refresh(*_args) -> None:
+        target_var.set(_truncate_middle(source_var.get(), max_length=max_length))
+
+    source_var.trace_add("write", refresh)
+    refresh()
+
+
+class _Tooltip:
+    def __init__(self, widget: tk.Widget, text_getter) -> None:
+        self.widget = widget
+        self.text_getter = text_getter
+        self.window: tk.Toplevel | None = None
+        self.label: ttk.Label | None = None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _show(self, _event=None) -> None:
+        text = self.text_getter()
+        if not text:
+            return
+        if self.window is not None:
+            return
+        self.window = tk.Toplevel(self.widget)
+        self.window.wm_overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.window.wm_geometry(f"+{x}+{y}")
+        self.label = ttk.Label(
+            self.window,
+            text=text,
+            style="Tooltip.TLabel",
+            justify="left",
+            wraplength=640,
+        )
+        self.label.pack()
+
+    def _hide(self, _event=None) -> None:
+        if self.window is not None:
+            self.window.destroy()
+            self.window = None
+            self.label = None
+
+
+def _bind_tooltip(widget: tk.Widget, variable: tk.StringVar) -> None:
+    _Tooltip(widget, variable.get)
+
+
+def _bind_static_tooltip(widget: tk.Widget, text: str) -> None:
+    _Tooltip(widget, lambda: text)
+
+
 def _config_from_state(state: _GuiState) -> tuple[AppConfig, Path]:
     config_path = Path(state.config_path.get()).expanduser()
     if not config_path.is_absolute():
@@ -596,7 +676,7 @@ def _save_config(state: _GuiState) -> AppConfig:
     config, config_path = _config_from_state(state)
     save_config_file(config_path, config_to_file_values(config))
     _append_log(state, f"Saved config: {config_path}")
-    state.status_text.set(f"Saved config: {config_path}")
+    state.status_text.set("Config saved.")
     _refresh_generated_status(state)
     return config
 
@@ -618,7 +698,7 @@ def _run_once(root: tk.Tk, state: _GuiState) -> None:
 
     threading.Thread(target=task, daemon=True).start()
     state.status_text.set("Running update...")
-    _append_log(state, "Running one update in the background...")
+    _append_log(state, "Running one update...")
 
 
 def _install_startup(state: _GuiState) -> bool:
@@ -638,7 +718,7 @@ def _install_startup(state: _GuiState) -> bool:
         _show_error(state, "Startup install failed", str(exc))
         return False
 
-    _set_status_and_log(state, "Startup installed.", f"Startup installed: {startup_path}")
+    _set_status_and_log(state, "Startup enabled.", f"Startup installed: {startup_path}")
     _refresh_startup_status(state)
     return True
 
@@ -651,7 +731,7 @@ def _remove_startup(state: _GuiState) -> bool:
         return False
 
     if removed:
-        _set_status_and_log(state, "Startup removed.", "Startup removed.")
+        _set_status_and_log(state, "Startup disabled.", "Startup removed.")
         _refresh_startup_status(state)
         return True
 
@@ -682,14 +762,14 @@ def _open_output_dir(state: _GuiState) -> None:
         _show_error(state, "Open output folder failed", str(exc))
         return
 
-    _set_status_and_log(state, "Output folder opened.", f"Opened output folder: {output_dir}")
+    _set_status_and_log(state, "Output opened.", f"Opened output folder: {output_dir}")
 
 
 def _install_browser_fallback(root: tk.Tk, state: _GuiState) -> None:
     if state.browser_install_in_progress:
         _set_status_and_log(
             state,
-            "Browser fallback install already running.",
+            "Browser fallback already running.",
             "Optional browser fallback install is already running.",
         )
         return
@@ -742,7 +822,7 @@ def _install_browser_fallback(root: tk.Tk, state: _GuiState) -> None:
             )
 
     state.browser_install_in_progress = True
-    state.status_text.set("Installing optional browser fallback...")
+    state.status_text.set("Installing browser fallback...")
     _append_log(state, f"Installing optional browser fallback with {python_executable}")
     threading.Thread(target=task, daemon=True).start()
 
@@ -756,7 +836,7 @@ def _finish_browser_fallback_install(state: _GuiState, project_root: Path | None
     )
     _set_status_and_log(
         state,
-        "Optional browser fallback installed.",
+        "Browser fallback installed.",
         f"Optional browser fallback installed successfully, {source_hint}.",
     )
 
@@ -788,7 +868,7 @@ def _test_lock_screen(state: _GuiState) -> None:
         _show_error(state, "Lock screen test failed", str(exc))
         return
 
-    _set_status_and_log(state, "Lock screen test completed.", f"Lock screen updated from: {image_path}")
+    _set_status_and_log(state, "Lock screen updated.", f"Lock screen updated from: {image_path}")
 
 
 def _preview_latest_wallpaper(state: _GuiState) -> None:
@@ -840,7 +920,7 @@ def _cleanup_uninstall(root: tk.Tk, state: _GuiState) -> None:
     _refresh_generated_status(state)
     _set_status_and_log(
         state,
-        "Cleanup completed.",
+        "Cleanup done.",
         _format_cleanup_result(
             result=result,
             output_dir=output_dir,
@@ -919,18 +999,17 @@ def _refresh_generated_status(state: _GuiState) -> None:
 
 
 def _format_startup_status() -> str:
-    target = get_startup_entry_path()
     status = "Installed" if has_startup() else "Not installed"
-    return f"Startup status: {status} ({target})"
+    return f"Startup: {status}"
 
 
 def _format_startup_hint() -> str:
     current_platform = detect_platform()
     if current_platform == WINDOWS:
-        return "Startup hint: Windows uses pythonw.exe when available, so startup runs without a console window."
+        return "Uses pythonw.exe on Windows when available."
     if current_platform == MACOS:
-        return "Startup hint: macOS startup uses a LaunchAgent in your user Library."
-    return "Startup hint: Linux startup uses a per-user autostart desktop entry."
+        return "Uses a LaunchAgent in your user Library."
+    return "Uses a per-user autostart desktop entry."
 
 
 def _is_lock_screen_supported() -> bool:
@@ -950,25 +1029,23 @@ def _format_startup_toggle_details() -> str:
     current_platform = detect_platform()
     if current_platform == WINDOWS:
         return (
-            f"Installed to: {target}\n"
-            "On Windows this uses pythonw.exe when available, so startup runs without a console window."
+            f"Entry: {_truncate_middle(str(target), 48)}\n"
+            "Runs quietly with pythonw.exe when available."
         )
     if current_platform == MACOS:
         return (
-            f"Installed to: {target}\n"
-            "On macOS this creates a LaunchAgent in your user Library."
+            f"Entry: {_truncate_middle(str(target), 48)}\n"
+            "Creates a LaunchAgent in your user Library."
         )
     return (
-        f"Installed to: {target}\n"
-        "On Linux this creates a per-user autostart desktop entry."
+        f"Entry: {_truncate_middle(str(target), 48)}\n"
+        "Creates a per-user autostart desktop entry."
     )
 
 
 def _format_browser_fallback_details() -> str:
     return (
-        "Installs Playwright and Chromium into the current environment. "
-        "The GUI uses `.[browser]` from the project root when available, "
-        "then falls back to a direct Playwright install."
+        "Installs Playwright + Chromium. Prefers `.[browser]`, otherwise installs Playwright directly."
     )
 
 
@@ -1151,7 +1228,7 @@ def find_latest_generated_wallpaper(output_dir: Path) -> Path | None:
 def _format_latest_wallpaper_status(output_dir: Path) -> str:
     latest = find_latest_generated_wallpaper(output_dir)
     if latest is None:
-        return f"Latest wallpaper: none found in {output_dir}"
+        return f"Latest wallpaper: none in {_truncate_middle(str(output_dir), 42)}"
 
     modified_at = datetime.fromtimestamp(latest.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     return f"Latest wallpaper: {latest.name} (updated {modified_at})"

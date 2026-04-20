@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -18,8 +19,33 @@ BUILD_DIR = ROOT / "build" / "pyinstaller"
 SPEC_DIR = ROOT / "build" / "spec"
 WINDOWS_VERSION_FILE = ROOT / "build" / "windows-version-info.txt"
 GUI_ENTRYPOINT = ROOT / "src" / "himawari_wallpaper_gui.py"
-APP_NAME = "himawari-dynamic-wallpaper-gui"
+RUNNER_ENTRYPOINT = ROOT / "src" / "himawari_wallpaper_runner.py"
+GUI_APP_NAME = "himawari-dynamic-wallpaper-gui"
+RUNNER_APP_NAME = "himawari-dynamic-wallpaper"
+BACKGROUND_APP_NAME = "himawari-dynamic-wallpaper-background"
 WINDOWS_ICON_PATH = ROOT / "assets" / "windows" / "app.ico"
+CONDA_RUNTIME_DLLS = (
+    "ffi-8.dll",
+    "jpeg8.dll",
+    "lcms2.dll",
+    "libcrypto-3-x64.dll",
+    "libexpat.dll",
+    "liblzma.dll",
+    "libssl-3-x64.dll",
+    "libtiff.dll",
+    "libwebp.dll",
+    "libwebpdecoder.dll",
+    "libwebpdemux.dll",
+    "libwebpmux.dll",
+    "openjp2.dll",
+    "tcl86t.dll",
+    "tiff.dll",
+    "tk86t.dll",
+    "turbojpeg.dll",
+    "zlib-ng2.dll",
+    "zlib.dll",
+    "zlib1.dll",
+)
 SUPPORT_FILES = (
     (Path("README.md"), "README.md"),
     (Path("README.zh-CN.md"), "README.zh-CN.md"),
@@ -27,13 +53,15 @@ SUPPORT_FILES = (
 )
 GENERATED_BUNDLE_FILES = (
     "config.json",
-    "run_himawari.py",
     "Run Himawari Wallpaper.bat",
     "Run Himawari Once.bat",
     "Open Himawari Settings.bat",
 )
-SOURCE_DIR_NAME = "src"
-LAUNCHER_SCRIPT_NAME = "run_himawari.py"
+WINDOWS_BUNDLE_EXECUTABLES = (
+    f"{GUI_APP_NAME}.exe",
+    f"{RUNNER_APP_NAME}.exe",
+    f"{BACKGROUND_APP_NAME}.exe",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -86,7 +114,13 @@ def build_output_path(output_dir: Path, project_name: str, version: str, label: 
     return output_dir / filename
 
 
-def build_pyinstaller_command(version_file: Path) -> list[str]:
+def build_pyinstaller_command(
+    *,
+    version_file: Path,
+    app_name: str,
+    entrypoint: Path,
+    windowed: bool,
+) -> list[str]:
     command = [
         sys.executable,
         "-m",
@@ -94,9 +128,9 @@ def build_pyinstaller_command(version_file: Path) -> list[str]:
         "--noconfirm",
         "--clean",
         "--onefile",
-        "--windowed",
+        "--windowed" if windowed else "--console",
         "--name",
-        APP_NAME,
+        app_name,
         "--version-file",
         str(version_file),
         "--distpath",
@@ -107,11 +141,29 @@ def build_pyinstaller_command(version_file: Path) -> list[str]:
         str(SPEC_DIR),
         "--paths",
         str(ROOT / "src"),
-        str(GUI_ENTRYPOINT),
+        str(entrypoint),
     ]
     if WINDOWS_ICON_PATH.exists():
         command.extend(["--icon", str(WINDOWS_ICON_PATH)])
+    for binary_path in find_extra_windows_binaries():
+        command.extend(["--add-binary", f"{binary_path}{os.pathsep}."])
     return command
+
+
+def find_extra_windows_binaries() -> list[Path]:
+    if sys.platform != "win32":
+        return []
+
+    library_bin = Path(sys.prefix) / "Library" / "bin"
+    if not library_bin.exists():
+        return []
+
+    binaries: list[Path] = []
+    for name in CONDA_RUNTIME_DLLS:
+        path = library_bin / name
+        if path.exists():
+            binaries.append(path)
+    return binaries
 
 
 def build_windows_file_version(version: str) -> str:
@@ -150,7 +202,7 @@ def build_windows_version_info(metadata: dict[str, str]) -> str:
             StringStruct('FileDescription', '{escaped_description}'),
             StringStruct('FileVersion', '{escaped_version}'),
             StringStruct('InternalName', '{escaped_name}'),
-            StringStruct('OriginalFilename', '{APP_NAME}.exe'),
+            StringStruct('OriginalFilename', '{GUI_APP_NAME}.exe'),
             StringStruct('ProductName', '{escaped_name}'),
             StringStruct('ProductVersion', '{escaped_version}')
           ]
@@ -168,24 +220,39 @@ def write_windows_version_file(path: Path, metadata: dict[str, str]) -> Path:
     return path
 
 
-def run_pyinstaller(version_file: Path) -> Path:
-    command = build_pyinstaller_command(version_file)
-    print("+", " ".join(command))
-    subprocess.run(command, cwd=ROOT, check=True)
+def run_pyinstaller(version_file: Path) -> dict[str, Path]:
+    targets = (
+        (GUI_APP_NAME, GUI_ENTRYPOINT, True),
+        (RUNNER_APP_NAME, RUNNER_ENTRYPOINT, False),
+        (BACKGROUND_APP_NAME, RUNNER_ENTRYPOINT, True),
+    )
+    built: dict[str, Path] = {}
 
-    exe_path = DIST_DIR / f"{APP_NAME}.exe"
-    if not exe_path.exists():
-        raise RuntimeError(f"PyInstaller did not create the expected executable: {exe_path}")
-    return exe_path
+    for app_name, entrypoint, windowed in targets:
+        command = build_pyinstaller_command(
+            version_file=version_file,
+            app_name=app_name,
+            entrypoint=entrypoint,
+            windowed=windowed,
+        )
+        print("+", " ".join(command))
+        subprocess.run(command, cwd=ROOT, check=True)
+
+        exe_path = DIST_DIR / f"{app_name}.exe"
+        if not exe_path.exists():
+            raise RuntimeError(f"PyInstaller did not create the expected executable: {exe_path}")
+        built[app_name] = exe_path
+
+    return built
 
 
 def collect_bundle_mappings(
-    exe_path: Path,
+    exe_paths: dict[str, Path],
 ) -> list[tuple[Path, Path]]:
-    mappings: list[tuple[Path, Path]] = [
-        (exe_path, Path(exe_path.name)),
-        (ROOT / SOURCE_DIR_NAME, Path(SOURCE_DIR_NAME)),
-    ]
+    mappings: list[tuple[Path, Path]] = []
+
+    for exe_path in exe_paths.values():
+        mappings.append((exe_path, Path(exe_path.name)))
 
     for relative_path, archive_name in SUPPORT_FILES:
         mappings.append((ROOT / relative_path, Path(archive_name)))
@@ -193,67 +260,29 @@ def collect_bundle_mappings(
     return mappings
 
 
-def build_python_launcher_script() -> str:
-    return """from pathlib import Path
-import sys
-
-ROOT = Path(__file__).resolve().parent
-SOURCE_DIR = ROOT / "src"
-if str(SOURCE_DIR) not in sys.path:
-    sys.path.insert(0, str(SOURCE_DIR))
-
-from himawari_wallpaper.cli import main
-
-
-if __name__ == "__main__":
-    main()
-"""
-
-
 def build_run_bat_contents(run_once: bool) -> str:
     mode_flag = "--once" if run_once else "--run"
-    return "\n".join(
-        [
-            "@echo off",
-            "setlocal",
-            "set SCRIPT_DIR=%~dp0",
-            "cd /d \"%SCRIPT_DIR%\"",
-            "call :resolve_python PYTHON_CMD",
-            "if errorlevel 1 exit /b 1",
-            "\"%PYTHON_CMD%\" \"%SCRIPT_DIR%run_himawari.py\" "
-            f"{mode_flag} --config \"%SCRIPT_DIR%config.json\"",
-            "endlocal",
-            "exit /b %errorlevel%",
-            "",
-            ":resolve_python",
-            "set \"%~1=\"",
-            "if defined CONDA_PREFIX if exist \"%CONDA_PREFIX%\\python.exe\" (",
-            "    set \"%~1=%CONDA_PREFIX%\\python.exe\"",
-            "    exit /b 0",
-            ")",
-            "for %%I in (py.exe py python.exe python) do (",
-            "    call :find_candidate \"%%~I\" FOUND_PYTHON",
-            "    if defined FOUND_PYTHON (",
-            "        set \"%~1=%FOUND_PYTHON%\"",
-            "        exit /b 0",
-            "    )",
-            ")",
-            "echo Could not find a usable Python interpreter.",
-            "echo Install Python or launch this script from an activated conda environment.",
-            "exit /b 1",
-            "",
-            ":find_candidate",
-            "set \"%~2=\"",
-            "for /f \"delims=\" %%P in ('where %~1 2^>nul') do (",
-            "    echo %%~fP| findstr /i /c:\"\\WindowsApps\\\" >nul",
-            "    if errorlevel 1 (",
-            "        set \"%~2=%%~fP\"",
-            "        exit /b 0",
-            "    )",
-            ")",
-            "exit /b 1",
-        ]
-    ) + "\n"
+    runner_name = RUNNER_APP_NAME if run_once else BACKGROUND_APP_NAME
+    lines = [
+        "@echo off",
+        "setlocal",
+        "set SCRIPT_DIR=%~dp0",
+        "cd /d \"%SCRIPT_DIR%\"",
+    ]
+    if run_once:
+        lines.append(
+            f"\"%SCRIPT_DIR%{runner_name}.exe\" "
+            f"{mode_flag} --config \"%SCRIPT_DIR%config.json\""
+        )
+        lines.append("endlocal")
+        lines.append("exit /b %errorlevel%")
+    else:
+        lines.append(
+            f"start \"\" \"%SCRIPT_DIR%{runner_name}.exe\" "
+            f"{mode_flag} --config \"%SCRIPT_DIR%config.json\""
+        )
+        lines.append("endlocal")
+    return "\n".join(lines) + "\n"
 
 
 def build_gui_bat_contents(exe_name: str) -> str:
@@ -273,7 +302,6 @@ def build_generated_bundle_contents(exe_name: str) -> dict[str, str]:
     config_source = ROOT / "config.example.json"
     return {
         "config.json": config_source.read_text(encoding="utf-8"),
-        LAUNCHER_SCRIPT_NAME: build_python_launcher_script(),
         "Run Himawari Wallpaper.bat": build_run_bat_contents(run_once=False),
         "Run Himawari Once.bat": build_run_bat_contents(run_once=True),
         "Open Himawari Settings.bat": build_gui_bat_contents(exe_name),
@@ -290,11 +318,11 @@ def _ignore_copy_names(_dir: str, entries: list[str]) -> set[str]:
 
 def build_bundle_directory(
     bundle_dir: Path,
-    exe_path: Path,
+    exe_paths: dict[str, Path],
 ) -> int:
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
-    for source_path, relative_target in collect_bundle_mappings(exe_path=exe_path):
+    for source_path, relative_target in collect_bundle_mappings(exe_paths=exe_paths):
         destination_path = bundle_dir / relative_target
         if source_path.is_dir():
             shutil.copytree(
@@ -307,7 +335,9 @@ def build_bundle_directory(
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_path, destination_path)
 
-    for relative_target, content in build_generated_bundle_contents(exe_path.name).items():
+    for relative_target, content in build_generated_bundle_contents(
+        exe_paths[GUI_APP_NAME].name
+    ).items():
         destination_path = bundle_dir / relative_target
         destination_path.parent.mkdir(parents=True, exist_ok=True)
         destination_path.write_text(content, encoding="utf-8")
@@ -317,14 +347,14 @@ def build_bundle_directory(
 
 def create_bundle_archive(
     output_path: Path,
-    exe_path: Path,
+    exe_paths: dict[str, Path],
 ) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="himawari-bundle-") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
         archive_root = temp_dir / output_path.stem
-        build_bundle_directory(archive_root, exe_path=exe_path)
+        build_bundle_directory(archive_root, exe_paths=exe_paths)
 
         added_files = 0
         with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -344,8 +374,8 @@ def main() -> None:
     output_path = build_output_path(output_dir, metadata["name"], metadata["version"], args.label)
 
     version_file = write_windows_version_file(WINDOWS_VERSION_FILE, metadata)
-    exe_path = run_pyinstaller(version_file)
-    added_files = create_bundle_archive(output_path, exe_path)
+    exe_paths = run_pyinstaller(version_file)
+    added_files = create_bundle_archive(output_path, exe_paths)
 
     print(f"Created: {output_path}")
     print(f"Files packed: {added_files}")

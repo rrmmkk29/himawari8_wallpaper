@@ -31,7 +31,12 @@ def test_build_pyinstaller_command_targets_gui_entrypoint() -> None:
     module = load_build_windows_bundle_module()
     version_file = Path("build/windows-version-info.txt")
 
-    command = module.build_pyinstaller_command(version_file)
+    command = module.build_pyinstaller_command(
+        version_file=version_file,
+        app_name=module.GUI_APP_NAME,
+        entrypoint=module.GUI_ENTRYPOINT,
+        windowed=True,
+    )
 
     assert command[:3] == [module.sys.executable, "-m", "PyInstaller"]
     assert "--windowed" in command
@@ -43,21 +48,24 @@ def test_build_pyinstaller_command_targets_gui_entrypoint() -> None:
 
 def test_create_bundle_archive_packs_exe_and_support_files(tmp_path: Path) -> None:
     module = load_build_windows_bundle_module()
-    exe_path = tmp_path / "himawari-dynamic-wallpaper-gui.exe"
-    exe_path.write_bytes(b"exe")
+    exe_paths = {
+        module.GUI_APP_NAME: tmp_path / f"{module.GUI_APP_NAME}.exe",
+        module.RUNNER_APP_NAME: tmp_path / f"{module.RUNNER_APP_NAME}.exe",
+        module.BACKGROUND_APP_NAME: tmp_path / f"{module.BACKGROUND_APP_NAME}.exe",
+    }
+    for exe_path in exe_paths.values():
+        exe_path.write_bytes(b"exe")
     output_path = tmp_path / "bundle.zip"
 
     original_root = module.ROOT
     fake_root = tmp_path / "repo"
     fake_root.mkdir()
-    (fake_root / "src" / "himawari_wallpaper").mkdir(parents=True)
-    (fake_root / "src" / "himawari_wallpaper" / "__init__.py").write_text("", encoding="utf-8")
     for relative, _archive_name in module.SUPPORT_FILES:
         (fake_root / relative).write_text(relative.name, encoding="utf-8")
 
     try:
         module.ROOT = fake_root
-        added = module.create_bundle_archive(output_path, exe_path)
+        added = module.create_bundle_archive(output_path, exe_paths)
     finally:
         module.ROOT = original_root
 
@@ -66,34 +74,31 @@ def test_create_bundle_archive_packs_exe_and_support_files(tmp_path: Path) -> No
         names = set(archive.namelist())
 
     archive_root = output_path.stem
-    assert f"{archive_root}/{exe_path.name}" in names
-    assert f"{archive_root}/src/himawari_wallpaper/__init__.py" in names
+    for exe_path in exe_paths.values():
+        assert f"{archive_root}/{exe_path.name}" in names
     for relative, archive_name in module.SUPPORT_FILES:
         assert f"{archive_root}/{archive_name}" in names
     for archive_name in module.GENERATED_BUNDLE_FILES:
         assert f"{archive_root}/{archive_name}" in names
 
 
-def test_build_python_launcher_script_imports_cli_main() -> None:
+def test_build_run_bat_contents_calls_runner_executable() -> None:
     module = load_build_windows_bundle_module()
 
-    content = module.build_python_launcher_script()
+    content = module.build_run_bat_contents(run_once=True)
 
-    assert 'SOURCE_DIR = ROOT / "src"' in content
-    assert "from himawari_wallpaper.cli import main" in content
+    assert f"\"%SCRIPT_DIR%{module.RUNNER_APP_NAME}.exe\"" in content
+    assert "--once --config" in content
+    assert "set SCRIPT_DIR=%~dp0" in content
 
 
-def test_build_run_bat_contents_calls_python_runtime() -> None:
+def test_build_run_bat_contents_uses_background_runner_for_loop_mode() -> None:
     module = load_build_windows_bundle_module()
 
     content = module.build_run_bat_contents(run_once=False)
 
-    assert "call :resolve_python PYTHON_CMD" in content
-    assert "\"%PYTHON_CMD%\" \"%SCRIPT_DIR%run_himawari.py\"" in content
-    assert "run_himawari.py" in content
+    assert f"start \"\" \"%SCRIPT_DIR%{module.BACKGROUND_APP_NAME}.exe\"" in content
     assert "--run --config" in content
-    assert "py.exe py python.exe python" in content
-    assert "\\WindowsApps\\" in content
 
 
 def test_build_windows_file_version_pads_to_four_parts() -> None:

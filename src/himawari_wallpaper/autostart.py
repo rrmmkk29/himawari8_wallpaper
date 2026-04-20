@@ -11,6 +11,16 @@ from .platforms import LINUX, MACOS, WINDOWS, detect_platform
 STARTUP_BAT_NAME = "HimawariWallpaperAuto.bat"
 LAUNCH_AGENT_NAME = "com.himawari.dynamic-wallpaper.plist"
 AUTOSTART_DESKTOP_NAME = "himawari-dynamic-wallpaper.desktop"
+GUI_EXE_NAME = "himawari-dynamic-wallpaper-gui.exe"
+RUNNER_EXE_NAME = "himawari-dynamic-wallpaper.exe"
+BACKGROUND_RUNNER_EXE_NAME = "himawari-dynamic-wallpaper-background.exe"
+BUNDLE_MARKERS = (
+    GUI_EXE_NAME,
+    RUNNER_EXE_NAME,
+    BACKGROUND_RUNNER_EXE_NAME,
+    "config.json",
+    "run_himawari.py",
+)
 PYTHON_EXECUTABLE_NAMES = {
     "python",
     "python.exe",
@@ -97,17 +107,25 @@ def _build_command(
     python_executable: Path | None = None,
     launcher_script: Path | None = None,
 ) -> list[str]:
-    executable = _resolve_python_executable(
-        background=background,
-        python_executable=python_executable,
-    )
-    command = [executable]
-
-    effective_launcher = launcher_script or _get_bundled_launcher_script()
-    if effective_launcher is not None:
-        command.append(str(effective_launcher))
+    bundled_runner = _get_bundled_runner_executable(background=background)
+    if bundled_runner is not None:
+        command = [str(bundled_runner)]
     else:
-        command.extend(["-m", "himawari_wallpaper"])
+        executable = _resolve_python_executable(
+            background=background,
+            python_executable=python_executable,
+        )
+        command = [executable]
+
+        effective_launcher = (
+            launcher_script
+            or _get_bundled_launcher_script()
+            or _get_config_relative_launcher_script(config_path)
+        )
+        if effective_launcher is not None:
+            command.append(str(effective_launcher))
+        else:
+            command.extend(["-m", "himawari_wallpaper"])
 
     command.extend(
         [
@@ -250,6 +268,22 @@ def _get_bundled_runtime_dir() -> Path | None:
     return None
 
 
+def _get_bundled_runner_executable(background: bool) -> Path | None:
+    bundle_root = _get_bundle_root()
+    if bundle_root is None:
+        return None
+
+    if background:
+        background_runner = bundle_root / BACKGROUND_RUNNER_EXE_NAME
+        if background_runner.exists():
+            return background_runner
+
+    runner = bundle_root / RUNNER_EXE_NAME
+    if runner.exists():
+        return runner
+    return None
+
+
 def _get_bundled_launcher_script() -> Path | None:
     bundle_root = _get_bundle_root()
     if bundle_root is None:
@@ -261,13 +295,22 @@ def _get_bundled_launcher_script() -> Path | None:
     return None
 
 
+def _get_config_relative_launcher_script(config_path: Path | None) -> Path | None:
+    if config_path is None:
+        return None
+
+    launcher_script = config_path.expanduser().resolve().parent / "run_himawari.py"
+    if launcher_script.exists():
+        return launcher_script
+    return None
+
+
 def _get_bundle_root() -> Path | None:
     executable = Path(sys.executable).resolve()
     candidates = (executable.parent, executable.parent.parent)
 
     for candidate in candidates:
-        launcher_script = candidate / "run_himawari.py"
-        if launcher_script.exists():
+        if any((candidate / marker).exists() for marker in BUNDLE_MARKERS):
             return candidate
 
     return None

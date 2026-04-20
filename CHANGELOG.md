@@ -3,6 +3,12 @@
 ## Unreleased
 - No unreleased changes yet.
 
+## 0.2.5
+- Switched the Windows release bundle to a self-contained layout with bundled runner executables for the real update workflow.
+- Kept the GUI as a settings helper while routing bundled `.bat` launchers and startup entries to runner executables instead of relying on a target-machine Python install.
+- Updated the Windows bundle build documentation to match the new self-contained release structure.
+- Reorganized both READMEs so ordinary end users see simplified install and usage instructions first, with Python and conda setup moved into developer-focused sections.
+
 ## 0.2.4
 - Reworked the desktop GUI into a more compact two-column layout with a clearer primary `Run now` action.
 - Added bundled-config auto-loading so the Windows GUI reopens with the saved `config.json` instead of resetting to defaults.

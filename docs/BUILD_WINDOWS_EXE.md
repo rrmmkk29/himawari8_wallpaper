@@ -1,17 +1,16 @@
 # Build Windows EXE
 
-This document covers the Windows-only bundle that is intended for end users who want
-the GUI and the Python application files packaged together.
+This document covers the Windows-only bundle intended for end users.
 The GUI executable is only the settings front end. The actual updater runs through
-the packaged Python source files and launcher scripts included in the same archive.
+bundled runner executables included in the same archive.
 
 ## What It Produces
 
 The Windows bundle script creates a zip archive in `release/` that contains:
 
 - `himawari-dynamic-wallpaper-gui.exe`
-- `src/`
-- `run_himawari.py`
+- `himawari-dynamic-wallpaper.exe`
+- `himawari-dynamic-wallpaper-background.exe`
 - `Run Himawari Wallpaper.bat`
 - `Run Himawari Once.bat`
 - `Open Himawari Settings.bat`
@@ -24,9 +23,10 @@ The Windows bundle script creates a zip archive in `release/` that contains:
 When the GUI is reopened from the release bundle, it automatically reloads that
 same `config.json`.
 
-`Run Himawari Wallpaper.bat` and the generated startup entry call `python` or
-`pythonw.exe` and then execute `run_himawari.py`. They do not route the actual
-update logic through the GUI executable.
+`Run Himawari Wallpaper.bat` and the generated startup entry call the bundled
+runner executables directly. They do not route the actual update logic through
+the GUI executable, and target machines do not need a separate Python install
+for the normal Windows bundle workflow.
 
 ## Local Build
 
@@ -69,7 +69,7 @@ If you want cleaner Windows file properties, update the metadata in [`pyproject.
 2. Update `CHANGELOG.md`.
 3. Run `python scripts/repo_check.py`.
 4. Run `python scripts/build_windows_bundle.py --label vX.Y.Z`.
-5. Verify the generated GUI, bundled `config.json`, and `.bat` launchers manually on a clean Windows machine if possible.
+5. Verify the generated GUI, bundled `config.json`, runner executables, and `.bat` launchers manually on a clean Windows machine if possible.
 6. Push tag `vX.Y.Z` so GitHub Actions can publish the same artifact in CI.
 
 ## Cleanup

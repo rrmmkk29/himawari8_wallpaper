@@ -2,7 +2,43 @@
 
 [English](README.md) | 简体中文
 
-一个基于 Himawari 卫星图的动态壁纸项目，现已整理为更适合上传 GitHub 的结构，并补上：
+这是一个基于 Himawari 卫星图的动态壁纸项目。
+
+## 先看这里
+
+如果你只是想先装好、先跑起来，不想先研究 Python 细节，先看这一部分。
+
+### Windows：最简单的使用方式
+
+1. 打开 GitHub 的 `Releases` 页面。
+2. 下载最新的 Windows zip 发布包。
+3. 解压到任意普通目录，比如 `D:\HimawariWallpaper`。
+4. 双击 `Open Himawari Settings.bat`。
+5. 在 GUI 里确认 `Config` 和 `Output`，然后点击 `Run now`。
+6. 如果希望每次开机自动更新，打开 `Enable startup at login`。
+
+几个主要文件的作用：
+
+- `Open Himawari Settings.bat`：打开设置界面
+- `Run Himawari Once.bat`：执行一次下载和生成
+- `Run Himawari Wallpaper.bat`：启动后台持续更新
+- `config.json`：保存你的设置
+
+说明：
+
+- GUI 保存的就是同目录下的 `config.json`，下次打开会自动读取。
+- 如果你只想下载图片、不想自动设成壁纸，可以关闭 `Apply wallpaper`。
+- Windows 下的 `Sync lock screen` 是可选功能，是否成功也取决于本机 Windows 策略和权限情况。
+
+### macOS / Linux：当前情况
+
+目前还没有 macOS / Linux 的自包含发布包。
+
+如果你在 macOS 或 Linux 上使用，请直接看下面的 `开发者 / Python 安装方式`。
+
+## 给普通用户
+
+### 这个项目能做什么
 
 - Windows / macOS / Linux 自动识别
 - 跨平台壁纸设置和登录自启动
@@ -13,7 +49,7 @@
 - 更顺手的初始化脚本
 - 基础测试与 CI
 
-## 当前支持
+### 当前支持
 
 程序会自动识别当前系统：
 
@@ -27,9 +63,91 @@
 - Linux 桌面环境差异很大，已经做成按能力自动降级。
 - 如果当前 Linux 桌面不在支持列表内，程序会给出明确报错，而不是静默失败。
 
-## 快速开始
+### 常用命令
 
-推荐优先使用 conda，统一引导脚本默认也会走 conda：
+单次刷新：
+
+```bash
+himawari-wallpaper --once
+```
+
+只生成 PNG 文件，由用户自行决定是否设置为壁纸：
+
+```bash
+himawari-wallpaper --once --download-only
+```
+
+Windows 下同时同步桌面壁纸和锁屏：
+
+```bash
+himawari-wallpaper --once --sync-lock-screen
+```
+
+持续运行：
+
+```bash
+himawari-wallpaper --run --interval 3600
+```
+
+安装登录自启动：
+
+```bash
+himawari-wallpaper --install-startup --interval 3600
+```
+
+移除登录自启动：
+
+```bash
+himawari-wallpaper --remove-startup
+```
+
+清理本地运行数据、配置文件和自启动：
+
+```bash
+himawari-wallpaper-cleanup --all
+```
+
+指定输出目录：
+
+```bash
+himawari-wallpaper --once --out ./data
+```
+
+使用配置文件：
+
+```bash
+himawari-wallpaper --config ./config.json --once
+```
+
+打开简易设置 GUI：
+
+```bash
+himawari-wallpaper --gui
+# 或
+himawari-wallpaper-gui
+```
+
+GUI 现在可以保存常用设置、单次运行、安装或移除开机自启、打开输出目录、
+预览最新生成的壁纸、显示当前自启状态、显示最近一次生成的壁纸文件、
+执行可选项的本地清理/卸载、把可选浏览器兜底直接安装到当前环境里，
+并在 Windows 下测试锁屏同步。界面现在改成更紧凑的双栏布局，
+并把 `Run now` 做成更明显的主按钮，尽量让常见操作在普通桌面窗口里一屏可见。
+按钮区现在分成 `Run` 和 `Environment` 两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
+`Enable startup at login` 开关控制，
+Windows 专属的锁屏相关控件会在 macOS / Linux 上自动禁用，
+GUI 顶部还会显示当前识别到的平台。
+如果你使用 Windows 发布包，GUI 下次打开时会自动读取同目录的 `config.json`，
+而不是回退成内置默认设置。
+如果 GUI 能定位到项目根目录，浏览器兜底按钮会安装 `.[browser]`；
+如果定位不到，则自动退回为直接安装 Playwright，方便普通用户点击使用。
+
+## 给开发者
+
+### Python 安装方式
+
+源码安装和开发环境建议优先使用 conda。
+
+推荐方式：
 
 ```bash
 python scripts/bootstrap.py
@@ -41,13 +159,6 @@ conda activate himawari-wallpaper
 ```bash
 python scripts/bootstrap.py --manager conda --conda-env-name himawari-wallpaper
 conda activate himawari-wallpaper
-```
-
-如果你更希望把运行参数放到文件里，而不是记 CLI 参数：
-
-```bash
-# 先复制 config.example.json 为 config.json 并按需修改
-python -m himawari_wallpaper --config ./config.json --once
 ```
 
 也可以直接使用仓库提供的 conda 环境文件：
@@ -99,30 +210,14 @@ himawari-wallpaper --once
 sudo apt install python3-venv
 ```
 
-## 手动安装
-
-优先推荐的手动安装方式是 conda：
-
-```bash
-conda env create -f environment.yml
-conda activate himawari-wallpaper
-```
-
-如果你不想用 conda，`venv` 仍然保留为备选：
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
-```
-
 如果后续源站又出现变动，纯 HTTP 路径不够稳定，再按需补装浏览器兜底：
 
 ```bash
 python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
+
+### 环境变量覆盖
 
 支持的环境变量覆盖：
 
@@ -172,103 +267,13 @@ python -m playwright install chromium
 
 这样默认安装更轻，只有在源站前端再次变化时才需要启用浏览器级兜底。
 
-## 常用命令
-
-单次刷新：
-
-```bash
-himawari-wallpaper --once
-```
-
-只生成 PNG 文件，由用户自行决定是否设置为壁纸：
-
-```bash
-himawari-wallpaper --once --download-only
-```
-
-Windows 下同时同步桌面壁纸和锁屏：
-
-```bash
-himawari-wallpaper --once --sync-lock-screen
-```
-
-Linux / WSL 抓图 smoke test，但不真正设置桌面壁纸：
-
-```bash
-himawari-wallpaper --once --download-only --out ./smoke-output
-```
-
-持续运行：
-
-```bash
-himawari-wallpaper --run --interval 3600
-```
-
-安装登录自启动：
-
-```bash
-himawari-wallpaper --install-startup --interval 3600
-```
-
-移除登录自启动：
-
-```bash
-himawari-wallpaper --remove-startup
-```
-
-清理本地运行数据、配置文件和自启动：
-
-```bash
-himawari-wallpaper-cleanup --all
-```
-
-如果你使用的是 conda，也可以顺手把 conda 环境一起删除：
-
-```bash
-python scripts/uninstall.py --all --remove-conda-env himawari-wallpaper
-```
-
-指定输出目录：
-
-```bash
-himawari-wallpaper --once --out ./data
-```
-
-使用配置文件：
-
-```bash
-himawari-wallpaper --config ./config.json --once
-```
-
-打开简易设置 GUI：
-
-```bash
-himawari-wallpaper --gui
-# 或
-himawari-wallpaper-gui
-```
-
-GUI 现在可以保存常用设置、单次运行、安装或移除开机自启、打开输出目录、
-预览最新生成的壁纸、显示当前自启状态、显示最近一次生成的壁纸文件、
-执行可选项的本地清理/卸载、把可选浏览器兜底直接安装到当前环境里，
-并在 Windows 下测试锁屏同步。界面现在改成更紧凑的双栏布局，
-并把 `Run now` 做成更明显的主按钮，尽量让常见操作在普通桌面窗口里一屏可见。
-按钮区现在分成 `Run` 和 `Environment` 两组，让日常操作和系统级操作分开。开机自启现在通过 GUI 中的
-`Enable startup at login` 开关控制，
-Windows 专属的锁屏相关控件会在 macOS / Linux 上自动禁用，
-GUI 顶部还会显示当前识别到的平台。
-如果你使用 Windows 发布包，GUI 下次打开时会自动读取同目录的 `config.json`，
-而不是回退成内置默认设置。
-如果 GUI 能定位到项目根目录，浏览器兜底按钮会安装 `.[browser]`；
-如果定位不到，则自动退回为直接安装 Playwright，方便普通用户点击使用。
-
 临时覆盖抓图参数：
 
 ```bash
 himawari-wallpaper --once --target-url https://himawari.asia/ --navigation-timeout-ms 120000 --warmup-wait-ms 15000
 ```
 
-## 默认输出目录
+### 默认输出目录
 
 未指定 `--out` 时，程序会自动使用用户目录下的可写路径，而不是写进源码目录：
 
@@ -278,7 +283,7 @@ himawari-wallpaper --once --target-url https://himawari.asia/ --navigation-timeo
 
 这比原来安装到 site-packages 后再向包目录写文件更稳妥。
 
-## Linux 额外说明
+### Linux 额外说明
 
 Linux 壁纸设置会按顺序尝试以下后端：
 
@@ -312,7 +317,19 @@ python -m pip install -e ".[browser]"
 python -m playwright install chromium
 ```
 
-## 兼容旧入口
+Linux / WSL 抓图 smoke test，但不真正设置桌面壁纸：
+
+```bash
+himawari-wallpaper --once --download-only --out ./smoke-output
+```
+
+如果你使用的是 conda，也可以顺手把 conda 环境一起删除：
+
+```bash
+python scripts/uninstall.py --all --remove-conda-env himawari-wallpaper
+```
+
+### 兼容旧入口
 
 旧脚本入口仍保留：
 
@@ -326,20 +343,22 @@ python src/himawari_wallpaper_webzoom.py --once
 himawari-wallpaper --once
 ```
 
-## Windows 发布包
+### Windows 发布包
 
 Windows 发布包会包含：
 
 - `himawari-dynamic-wallpaper-gui.exe`
-- `src/` Python 程序源码
-- `run_himawari.py` Python 启动脚本
+- `himawari-dynamic-wallpaper.exe`
+- `himawari-dynamic-wallpaper-background.exe`
 - `Run Himawari Wallpaper.bat` 持续运行入口
 - `Run Himawari Once.bat` 单次刷新入口
 - `Open Himawari Settings.bat` 重新打开 GUI 的入口
 - `config.example.json` 和可直接编辑的 `config.json`
+- `README.md` 和 `README.zh-CN.md`
 
-GUI 是纯粹的设置辅助界面；真正的更新逻辑和开机自启都会通过发布包内
-附带的 Python 源码和启动脚本来运行，而不是直接调用 GUI exe。发布包中的
-`.bat` 启动脚本会调用系统里的 `python`。
+这个发布包的目标就是给普通 Windows 用户直接使用。
+GUI 仍然只是设置辅助界面；真正的更新逻辑由发布包内的 runner 可执行文件负责，
+而不是由 GUI exe 自己承担。`.bat` 启动脚本会直接调用打包好的 runner `.exe`，
+所以目标机器不需要再额外安装 Python 才能使用这个 Windows 发布包。
 
 Windows 可执行包的细节见 [`docs/BUILD_WINDOWS_EXE.md`](docs/BUILD_WINDOWS_EXE.md)。

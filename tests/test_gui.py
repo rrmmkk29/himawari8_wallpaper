@@ -22,7 +22,7 @@ def test_find_latest_generated_wallpaper_returns_none_when_missing(tmp_path: Pat
 def test_format_latest_wallpaper_status_when_missing(tmp_path: Path) -> None:
     text = gui._format_latest_wallpaper_status(tmp_path)
 
-    assert "none found" in text
+    assert "Latest wallpaper: none in " in text
 
 
 def test_format_latest_wallpaper_status_includes_filename(tmp_path: Path) -> None:
@@ -89,7 +89,7 @@ def test_format_startup_toggle_details_windows(monkeypatch, tmp_path: Path) -> N
 
     text = gui._format_startup_toggle_details()
 
-    assert str(startup_path) in text
+    assert "Entry:" in text
     assert "pythonw.exe" in text
 
 
@@ -171,6 +171,21 @@ def test_display_path_uses_normpath(monkeypatch) -> None:
     monkeypatch.setattr(gui.os.path, "normpath", lambda value: value.replace("/", "\\"))
 
     assert gui._display_path("D:/demo/config.json") == "D:\\demo\\config.json"
+
+
+def test_truncate_middle_shortens_long_values() -> None:
+    text = gui._truncate_middle("abcdefghijklmnopqrstuvwxyz", max_length=12)
+
+    assert text == "abcd...vwxyz"
+
+
+def test_format_latest_wallpaper_status_shortens_missing_output_dir(tmp_path: Path) -> None:
+    long_path = tmp_path / "very" / "long" / "nested" / "folder" / "for" / "wallpapers"
+
+    text = gui._format_latest_wallpaper_status(long_path)
+
+    assert "Latest wallpaper: none in " in text
+    assert "..." in text
 
 
 def test_format_subprocess_error_uses_last_output_line() -> None:

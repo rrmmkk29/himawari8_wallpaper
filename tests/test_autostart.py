@@ -46,15 +46,41 @@ def test_build_command_uses_explicit_python_and_launcher(tmp_path: Path) -> None
     assert "--config" in command
 
 
-def test_build_command_auto_detects_bundled_runtime(monkeypatch, tmp_path: Path) -> None:
+def test_build_command_prefers_bundled_runner_executable(monkeypatch, tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir(parents=True)
+    gui_executable = bundle_root / "himawari-dynamic-wallpaper-gui.exe"
+    gui_executable.write_bytes(b"exe")
+    background_runner = bundle_root / autostart.BACKGROUND_RUNNER_EXE_NAME
+    background_runner.write_bytes(b"exe")
+
+    monkeypatch.setattr(autostart.sys, "executable", str(gui_executable))
+
+    command = autostart._build_command(
+        interval_sec=3600,
+        out_dir=tmp_path / "out",
+        earth_height_ratio=0.6,
+        y_offset_ratio=0.0,
+        max_zoom=4,
+        apply_wallpaper=True,
+        sync_lock_screen=False,
+        config_path=None,
+        background=True,
+    )
+
+    assert command[0] == str(background_runner)
+    assert "-m" not in command
+
+
+def test_build_command_prefers_launcher_next_to_config(monkeypatch, tmp_path: Path) -> None:
     bundle_root = tmp_path / "bundle"
     bundle_root.mkdir(parents=True)
     launcher_script = bundle_root / "run_himawari.py"
     launcher_script.write_text("print('launcher')\n", encoding="utf-8")
-    gui_executable = bundle_root / "himawari-dynamic-wallpaper-gui.exe"
-    gui_executable.write_bytes(b"exe")
+    config_path = bundle_root / "config.json"
+    config_path.write_text("{}", encoding="utf-8")
 
-    monkeypatch.setattr(autostart.sys, "executable", str(gui_executable))
+    monkeypatch.setattr(autostart, "_get_bundled_launcher_script", lambda: None)
     monkeypatch.setattr(
         autostart,
         "_find_system_python_executable",
@@ -69,11 +95,27 @@ def test_build_command_auto_detects_bundled_runtime(monkeypatch, tmp_path: Path)
         max_zoom=4,
         apply_wallpaper=True,
         sync_lock_screen=False,
-        config_path=None,
+        config_path=config_path,
         background=True,
     )
 
     assert command[:2] == [str(tmp_path / "pythonw.exe"), str(launcher_script)]
+
+
+def test_get_bundled_runner_executable_prefers_background_binary(monkeypatch, tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir(parents=True)
+    gui_executable = bundle_root / autostart.GUI_EXE_NAME
+    gui_executable.write_bytes(b"exe")
+    runner = bundle_root / autostart.RUNNER_EXE_NAME
+    runner.write_bytes(b"exe")
+    background_runner = bundle_root / autostart.BACKGROUND_RUNNER_EXE_NAME
+    background_runner.write_bytes(b"exe")
+
+    monkeypatch.setattr(autostart.sys, "executable", str(gui_executable))
+
+    assert autostart._get_bundled_runner_executable(background=True) == background_runner
+    assert autostart._get_bundled_runner_executable(background=False) == runner
 
 
 def test_find_system_python_executable_skips_windowsapps_alias(monkeypatch, tmp_path: Path) -> None:

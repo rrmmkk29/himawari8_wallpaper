@@ -4,6 +4,7 @@ from PIL import Image
 
 from himawari_wallpaper.autostart import _build_command
 from himawari_wallpaper.wallpaper import (
+    _build_subprocess_run_kwargs,
     _build_lock_screen_script,
     _cleanup_old_windows_lock_screen_candidates,
     _format_command_error_output,
@@ -122,3 +123,29 @@ def test_set_lock_screen_windows_retries_with_second_candidate(monkeypatch, tmp_
 
     assert len(calls) == 1
     assert "candidate2.jpg" in calls[0]
+
+
+def test_build_subprocess_run_kwargs_hides_windows_console(monkeypatch) -> None:
+    class _StartupInfo:
+        def __init__(self) -> None:
+            self.dwFlags = 0
+            self.wShowWindow = 99
+
+    monkeypatch.setattr("himawari_wallpaper.wallpaper.detect_platform", lambda: "windows")
+    monkeypatch.setattr("subprocess.CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr("subprocess.STARTUPINFO", _StartupInfo, raising=False)
+    monkeypatch.setattr("subprocess.STARTF_USESHOWWINDOW", 0x00000001, raising=False)
+    monkeypatch.setattr("subprocess.SW_HIDE", 0, raising=False)
+
+    kwargs = _build_subprocess_run_kwargs()
+
+    assert kwargs["creationflags"] == 0x08000000
+    startupinfo = kwargs["startupinfo"]
+    assert startupinfo.dwFlags & 0x00000001
+    assert startupinfo.wShowWindow == 0
+
+
+def test_build_subprocess_run_kwargs_is_empty_off_windows(monkeypatch) -> None:
+    monkeypatch.setattr("himawari_wallpaper.wallpaper.detect_platform", lambda: "linux")
+
+    assert _build_subprocess_run_kwargs() == {}

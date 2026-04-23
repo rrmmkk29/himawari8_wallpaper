@@ -282,13 +282,39 @@ def _cleanup_old_windows_lock_screen_candidates(stage_dir: Path) -> None:
 
 def _run_command(command: list[str], error_message: str) -> None:
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            **_build_subprocess_run_kwargs(),
+        )
     except FileNotFoundError as exc:
         raise RuntimeError(f"{error_message} Missing command: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:
         stderr = _format_command_error_output(exc.stderr or exc.stdout or "")
         suffix = f" {stderr}" if stderr else ""
         raise RuntimeError(f"{error_message}{suffix}") from exc
+
+
+def _build_subprocess_run_kwargs() -> dict[str, object]:
+    if detect_platform() != WINDOWS:
+        return {}
+
+    kwargs: dict[str, object] = {}
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if create_no_window:
+        kwargs["creationflags"] = create_no_window
+
+    startupinfo_factory = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_factory is None:
+        return kwargs
+
+    startupinfo = startupinfo_factory()
+    startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+    startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+    kwargs["startupinfo"] = startupinfo
+    return kwargs
 
 
 def _format_command_error_output(output: str) -> str:

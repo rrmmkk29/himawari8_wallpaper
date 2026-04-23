@@ -12,13 +12,14 @@ from tkinter import filedialog, messagebox, ttk
 from .app import update_once
 from .autostart import get_startup_entry_path, has_startup, install_startup, remove_startup
 from .config import AppConfig, build_runtime_config, config_to_file_values, save_config_file
-from .platforms import MACOS, WINDOWS, detect_platform
+from .platforms import MACOS, WINDOWS, detect_platform, enable_windows_dpi_awareness
 from .uninstall import CleanupResult, perform_cleanup_actions, resolve_cleanup_config_path
 from .wallpaper import set_lock_screen
 
 
 def main(initial_config: AppConfig | None = None) -> None:
     config = initial_config or _build_default_config()
+    enable_windows_dpi_awareness()
     root = tk.Tk()
     root.title("Himawari Wallpaper Settings")
     screen_width = root.winfo_screenwidth()

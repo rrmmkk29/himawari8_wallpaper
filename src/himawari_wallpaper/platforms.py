@@ -10,6 +10,7 @@ LINUX = "linux"
 
 DEFAULT_SCREEN_SIZE = (1920, 1080)
 APP_DIR_NAME = "HimawariDynamicWallpaper"
+_WINDOWS_DPI_AWARENESS_ENABLED = False
 
 
 def detect_platform() -> str:
@@ -39,6 +40,26 @@ def get_default_output_dir() -> Path:
     return Path.home() / ".local" / "share" / "himawari-dynamic-wallpaper"
 
 
+def enable_windows_dpi_awareness() -> bool:
+    global _WINDOWS_DPI_AWARENESS_ENABLED
+
+    if _WINDOWS_DPI_AWARENESS_ENABLED or detect_platform() != WINDOWS:
+        return _WINDOWS_DPI_AWARENESS_ENABLED
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        try:
+            user32.SetProcessDPIAware()
+        except Exception:
+            return False
+        _WINDOWS_DPI_AWARENESS_ENABLED = True
+        return True
+    except Exception:
+        return False
+
+
 def get_screen_size(default: Tuple[int, int] = DEFAULT_SCREEN_SIZE) -> Tuple[int, int]:
     current_platform = detect_platform()
 
@@ -57,10 +78,7 @@ def _get_screen_size_windows(default: Tuple[int, int]) -> Tuple[int, int]:
         import ctypes
 
         user32 = ctypes.windll.user32
-        try:
-            user32.SetProcessDPIAware()
-        except Exception:
-            pass
+        enable_windows_dpi_awareness()
         width = user32.GetSystemMetrics(0)
         height = user32.GetSystemMetrics(1)
         if width > 0 and height > 0:

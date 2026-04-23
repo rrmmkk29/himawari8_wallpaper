@@ -1,7 +1,8 @@
 # Changelog
 
 ## Unreleased
-- No unreleased changes yet.
+- Fixed a Windows GUI DPI-scaling issue where clicking `Run now` could cause the settings window to shrink after the first wallpaper update.
+- Changed Windows lock-screen sync subprocesses to run without showing a transient console window when launched from the GUI.
 
 ## 0.2.6
 - Changed Windows login auto-start to use a Startup shortcut instead of a batch file, which avoids the extra console window on normal startup.

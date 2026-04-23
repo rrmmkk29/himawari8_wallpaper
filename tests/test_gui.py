@@ -40,7 +40,9 @@ def test_format_startup_hint_windows(monkeypatch) -> None:
 
     text = gui._format_startup_hint()
 
+    assert "Startup shortcut" in text
     assert "pythonw.exe" in text
+    assert "console window" in text
 
 
 def test_format_startup_hint_macos(monkeypatch) -> None:
@@ -83,14 +85,16 @@ def test_format_browser_fallback_details_mentions_project_extra() -> None:
 
 
 def test_format_startup_toggle_details_windows(monkeypatch, tmp_path: Path) -> None:
-    startup_path = tmp_path / "Startup" / "HimawariWallpaperAuto.bat"
+    startup_path = tmp_path / "Startup" / "HimawariWallpaperAuto.lnk"
     monkeypatch.setattr(gui, "detect_platform", lambda: "windows")
     monkeypatch.setattr(gui, "get_startup_entry_path", lambda: startup_path)
 
     text = gui._format_startup_toggle_details()
 
     assert "Entry:" in text
+    assert "Startup shortcut" in text
     assert "pythonw.exe" in text
+    assert "console window" in text
 
 
 def test_build_cleanup_confirmation_message_mentions_conda_and_targets(tmp_path: Path) -> None:

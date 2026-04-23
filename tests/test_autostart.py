@@ -9,18 +9,114 @@ def test_get_startup_entry_path_windows(monkeypatch) -> None:
 
     result = autostart.get_startup_entry_path()
 
-    assert result == Path("/tmp/startup") / autostart.STARTUP_BAT_NAME
+    assert result == Path("/tmp/startup") / autostart.STARTUP_SHORTCUT_NAME
 
 
 def test_has_startup_reflects_target_exists(monkeypatch, tmp_path: Path) -> None:
     target = tmp_path / "auto.bat"
     monkeypatch.setattr(autostart, "get_startup_entry_path", lambda: target)
+    monkeypatch.setattr(autostart, "detect_platform", lambda: autostart.LINUX)
 
     assert autostart.has_startup() is False
 
     target.write_text("echo test", encoding="utf-8")
 
     assert autostart.has_startup() is True
+
+
+def test_has_startup_windows_accepts_legacy_bat(monkeypatch, tmp_path: Path) -> None:
+    startup_dir = tmp_path / "Startup"
+    startup_dir.mkdir()
+    monkeypatch.setattr(autostart, "detect_platform", lambda: autostart.WINDOWS)
+    monkeypatch.setattr(autostart, "_get_windows_startup_folder", lambda: startup_dir)
+
+    legacy_target = startup_dir / autostart.LEGACY_STARTUP_BAT_NAME
+    legacy_target.write_text("@echo off\n", encoding="utf-8")
+
+    assert autostart.has_startup() is True
+
+
+def test_remove_startup_windows_removes_shortcut_and_legacy_entries(monkeypatch, tmp_path: Path) -> None:
+    startup_dir = tmp_path / "Startup"
+    startup_dir.mkdir()
+    monkeypatch.setattr(autostart, "detect_platform", lambda: autostart.WINDOWS)
+    monkeypatch.setattr(autostart, "_get_windows_startup_folder", lambda: startup_dir)
+
+    current_target = startup_dir / autostart.STARTUP_SHORTCUT_NAME
+    legacy_target = startup_dir / autostart.LEGACY_STARTUP_BAT_NAME
+    legacy_vbs_target = startup_dir / autostart.LEGACY_STARTUP_VBS_NAME
+    current_target.write_text("lnk", encoding="utf-8")
+    legacy_target.write_text("bat", encoding="utf-8")
+    legacy_vbs_target.write_text("vbs", encoding="utf-8")
+
+    assert autostart.remove_startup() is True
+    assert not current_target.exists()
+    assert not legacy_target.exists()
+    assert not legacy_vbs_target.exists()
+
+
+def test_install_windows_startup_creates_shortcut_and_removes_legacy_entries(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    startup_dir = tmp_path / "Startup"
+    startup_dir.mkdir()
+    monkeypatch.setattr(autostart, "_get_windows_startup_folder", lambda: startup_dir)
+    recorded: dict[str, object] = {}
+
+    def fake_create_windows_shortcut(shortcut_path: Path, command: list[str]) -> None:
+        recorded["shortcut_path"] = shortcut_path
+        recorded["command"] = command
+        shortcut_path.write_text("shortcut", encoding="utf-8")
+
+    monkeypatch.setattr(autostart, "_create_windows_shortcut", fake_create_windows_shortcut)
+
+    legacy_target = startup_dir / autostart.LEGACY_STARTUP_BAT_NAME
+    legacy_target.write_text("@echo off\n", encoding="utf-8")
+
+    target = autostart._install_windows_startup(
+        ["C:\\demo\\pythonw.exe", "C:\\demo\\run.py", "--run"]
+    )
+
+    assert target == startup_dir / autostart.STARTUP_SHORTCUT_NAME
+    assert recorded["shortcut_path"] == target
+    assert recorded["command"] == ["C:\\demo\\pythonw.exe", "C:\\demo\\run.py", "--run"]
+    assert target.exists()
+    assert not legacy_target.exists()
+
+
+def test_build_windows_shortcut_command_targets_pythonw(monkeypatch, tmp_path: Path) -> None:
+    shortcut_path = tmp_path / "Startup" / autostart.STARTUP_SHORTCUT_NAME
+    monkeypatch.setattr(autostart.subprocess, "list2cmdline", lambda values: " ".join(values))
+    monkeypatch.setattr(autostart, "_find_windows_powershell_executable", lambda: "pwsh.exe")
+
+    command = autostart._build_windows_shortcut_command(
+        shortcut_path,
+        ["C:\\demo\\pythonw.exe", "C:\\demo\\run.py", "--run"],
+    )
+
+    assert command[:4] == ["pwsh.exe", "-NoProfile", "-NonInteractive", "-Command"]
+    assert "CreateShortcut" in command[4]
+    assert "pythonw.exe" in command[4]
+    assert "run.py --run" in command[4]
+
+
+def test_get_windows_startup_folder_falls_back_without_appdata(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+
+    result = autostart._get_windows_startup_folder()
+
+    assert result == (
+        tmp_path
+        / "AppData"
+        / "Roaming"
+        / "Microsoft"
+        / "Windows"
+        / "Start Menu"
+        / "Programs"
+        / "Startup"
+    )
 
 
 def test_build_command_uses_explicit_python_and_launcher(tmp_path: Path) -> None:

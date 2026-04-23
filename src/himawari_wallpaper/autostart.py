@@ -8,7 +8,9 @@ from pathlib import Path
 
 from .platforms import LINUX, MACOS, WINDOWS, detect_platform
 
-STARTUP_BAT_NAME = "HimawariWallpaperAuto.bat"
+STARTUP_SHORTCUT_NAME = "HimawariWallpaperAuto.lnk"
+LEGACY_STARTUP_BAT_NAME = "HimawariWallpaperAuto.bat"
+LEGACY_STARTUP_VBS_NAME = "HimawariWallpaperAuto.vbs"
 LAUNCH_AGENT_NAME = "com.himawari.dynamic-wallpaper.plist"
 AUTOSTART_DESKTOP_NAME = "himawari-dynamic-wallpaper.desktop"
 GUI_EXE_NAME = "himawari-dynamic-wallpaper-gui.exe"
@@ -71,8 +73,16 @@ def install_startup(
 
 
 def remove_startup() -> bool:
-    target = get_startup_entry_path()
+    current_platform = detect_platform()
+    if current_platform == WINDOWS:
+        removed = False
+        for target in _get_windows_startup_candidates():
+            if target.exists():
+                target.unlink()
+                removed = True
+        return removed
 
+    target = get_startup_entry_path()
     if target.exists():
         target.unlink()
         return True
@@ -80,13 +90,15 @@ def remove_startup() -> bool:
 
 
 def has_startup() -> bool:
+    if detect_platform() == WINDOWS:
+        return any(target.exists() for target in _get_windows_startup_candidates())
     return get_startup_entry_path().exists()
 
 
 def get_startup_entry_path() -> Path:
     current_platform = detect_platform()
     if current_platform == WINDOWS:
-        return _get_windows_startup_folder() / STARTUP_BAT_NAME
+        return _get_windows_startup_folder() / STARTUP_SHORTCUT_NAME
     if current_platform == MACOS:
         return _get_launch_agents_dir() / LAUNCH_AGENT_NAME
     if current_platform == LINUX:
@@ -154,10 +166,88 @@ def _build_command(
 def _install_windows_startup(command: list[str]) -> Path:
     startup_folder = _get_windows_startup_folder()
     startup_folder.mkdir(parents=True, exist_ok=True)
-    target = startup_folder / STARTUP_BAT_NAME
-    content = "@echo off\nstart \"\" " + subprocess.list2cmdline(command) + "\n"
-    target.write_text(content, encoding="utf-8")
+    target = startup_folder / STARTUP_SHORTCUT_NAME
+    _create_windows_shortcut(target, command)
+    for legacy_target in _get_windows_legacy_startup_candidates():
+        legacy_target.unlink(missing_ok=True)
     return target
+
+
+def _create_windows_shortcut(shortcut_path: Path, command: list[str]) -> None:
+    shortcut_path.unlink(missing_ok=True)
+    command_line = _build_windows_shortcut_command(shortcut_path, command)
+    result = subprocess.run(
+        command_line,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        details = _decode_subprocess_output(result.stderr or result.stdout or b"").strip()
+        if details:
+            raise RuntimeError(f"Failed to create Windows startup shortcut: {details}")
+        raise RuntimeError("Failed to create Windows startup shortcut.")
+
+
+def _get_windows_startup_candidates() -> tuple[Path, ...]:
+    startup_folder = _get_windows_startup_folder()
+    return (
+        startup_folder / STARTUP_SHORTCUT_NAME,
+        * _get_windows_legacy_startup_candidates(),
+    )
+
+
+def _get_windows_legacy_startup_candidates() -> tuple[Path, ...]:
+    startup_folder = _get_windows_startup_folder()
+    return (
+        startup_folder / LEGACY_STARTUP_BAT_NAME,
+        startup_folder / LEGACY_STARTUP_VBS_NAME,
+    )
+
+
+def _build_windows_shortcut_command(shortcut_path: Path, command: list[str]) -> list[str]:
+    if not command:
+        raise ValueError("command must not be empty.")
+
+    target_path = command[0]
+    arguments = subprocess.list2cmdline(command[1:]) if len(command) > 1 else ""
+    working_directory = str(Path(target_path).resolve().parent)
+
+    script = "\n".join(
+        [
+            "$WshShell = New-Object -ComObject WScript.Shell",
+            f"$Shortcut = $WshShell.CreateShortcut('{_powershell_single_quote(shortcut_path)}')",
+            f"$Shortcut.TargetPath = '{_powershell_single_quote(target_path)}'",
+            f"$Shortcut.Arguments = '{_powershell_single_quote(arguments)}'",
+            f"$Shortcut.WorkingDirectory = '{_powershell_single_quote(working_directory)}'",
+            "$Shortcut.Save()",
+        ]
+    )
+    shell_executable = _find_windows_powershell_executable()
+    return [shell_executable, "-NoProfile", "-NonInteractive", "-Command", script]
+
+
+def _powershell_single_quote(value: str | os.PathLike[str]) -> str:
+    return str(value).replace("'", "''")
+
+
+def _find_windows_powershell_executable() -> str:
+    for candidate in ("pwsh.exe", "pwsh", "powershell.exe", "powershell"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return "powershell"
+
+
+def _decode_subprocess_output(payload: bytes | str) -> str:
+    if isinstance(payload, str):
+        return payload
+
+    for encoding in ("utf-8", "utf-16", "gbk", "cp1252"):
+        try:
+            return payload.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return payload.decode("utf-8", errors="replace")
 
 
 def _install_macos_launch_agent(command: list[str], out_dir: Path) -> Path:
@@ -202,9 +292,16 @@ def _install_linux_autostart(command: list[str]) -> Path:
 
 def _get_windows_startup_folder() -> Path:
     appdata = os.environ.get("APPDATA")
-    if not appdata:
-        raise RuntimeError("APPDATA is not set.")
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    if appdata:
+        roaming_dir = Path(appdata)
+    else:
+        userprofile = os.environ.get("USERPROFILE")
+        roaming_dir = (
+            Path(userprofile) / "AppData" / "Roaming"
+            if userprofile
+            else Path.home() / "AppData" / "Roaming"
+        )
+    return roaming_dir / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
 
 def _get_launch_agents_dir() -> Path:

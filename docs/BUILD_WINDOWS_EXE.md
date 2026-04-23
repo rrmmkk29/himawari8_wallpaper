@@ -28,6 +28,10 @@ runner executables directly. They do not route the actual update logic through
 the GUI executable, and target machines do not need a separate Python install
 for the normal Windows bundle workflow.
 
+On Windows source installs, login auto-start now uses a Startup-folder shortcut
+that targets `pythonw.exe` when available instead of a batch file, which helps
+avoid an extra console window during automatic startup.
+
 ## Local Build
 
 From the repository root:

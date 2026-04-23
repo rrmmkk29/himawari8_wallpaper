@@ -1006,7 +1006,7 @@ def _format_startup_status() -> str:
 def _format_startup_hint() -> str:
     current_platform = detect_platform()
     if current_platform == WINDOWS:
-        return "Uses pythonw.exe on Windows when available."
+        return "Uses a Startup shortcut to pythonw.exe or the bundled background runner to avoid a console window when possible."
     if current_platform == MACOS:
         return "Uses a LaunchAgent in your user Library."
     return "Uses a per-user autostart desktop entry."
@@ -1030,7 +1030,7 @@ def _format_startup_toggle_details() -> str:
     if current_platform == WINDOWS:
         return (
             f"Entry: {_truncate_middle(str(target), 48)}\n"
-            "Runs quietly with pythonw.exe when available."
+            "Uses a Startup shortcut to pythonw.exe or the bundled background runner to avoid a console window when possible."
         )
     if current_platform == MACOS:
         return (

@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- No unreleased changes yet.
+
+## 0.2.6
 - Changed Windows login auto-start to use a Startup shortcut instead of a batch file, which avoids the extra console window on normal startup.
 - Added compatibility cleanup for legacy Windows auto-start `.bat` and `.vbs` entries when reinstalling startup.
 

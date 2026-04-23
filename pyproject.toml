@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "himawari-dynamic-wallpaper"
-version = "0.2.5"
+version = "0.2.6"
 description = "Cross-platform Himawari satellite dynamic wallpaper project"
 readme = "README.md"
 license = "MIT"

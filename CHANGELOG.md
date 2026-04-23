@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- No unreleased changes yet.
+
+## 0.2.7
 - Fixed a Windows GUI DPI-scaling issue where clicking `Run now` could cause the settings window to shrink after the first wallpaper update.
 - Changed Windows lock-screen sync subprocesses to run without showing a transient console window when launched from the GUI.
 
